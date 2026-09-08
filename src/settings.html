@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Settings</title>
+    <link rel="stylesheet" href="settings.css" />
+    <script src="settings.js" defer></script>
+  </head>
+  <body>
+    <div class="panel">
+      <!-- Groq API key -->
+      <section class="section">
+        <label class="label" for="api-key">Groq API key</label>
+        <div class="key-wrap" id="key-wrap">
+          <input
+            class="input"
+            id="api-key"
+            type="password"
+            autocomplete="off"
+            autocorrect="off"
+            autocapitalize="off"
+            spellcheck="false"
+          />
+          <button
+            class="eye-btn"
+            id="eye-btn"
+            type="button"
+            aria-label="Show or hide API key"
+          >
+            <svg class="icon icon-eye" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
+              <circle cx="12" cy="12" r="3" />
+            </svg>
+            <svg class="icon icon-eye-off" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M9.88 9.88a3 3 0 1 0 4.24 4.24" />
+              <path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c6.5 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68" />
+              <path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3.5 7 10 7a9.74 9.74 0 0 0 5.39-1.61" />
+              <line x1="2" y1="2" x2="22" y2="22" />
+            </svg>
+          </button>
+        </div>
+        <a
+          class="hint-link"
+          id="hint-link"
+          href="https://console.groq.com/keys"
+          target="_blank"
+          rel="noopener"
+          >Get a key at console.groq.com</a
+        >
+      </section>
+
+      <!-- Shortcut -->
+      <section class="section">
+        <span class="label" id="shortcut-label">Shortcut</span>
+        <button
+          class="keycap"
+          id="hotkey-btn"
+          type="button"
+          aria-labelledby="shortcut-label"
+        ></button>
+        <div class="segmented" id="mode-segmented" role="group" aria-labelledby="shortcut-label">
+          <button type="button" data-mode="push_to_talk">Push to talk</button>
+          <button type="button" data-mode="toggle">Toggle</button>
+        </div>
+        <p class="caption">
+          Hold to record and release to paste, or tap to start and stop.
+        </p>
+      </section>
+
+      <!-- Output -->
+      <section class="section">
+        <div class="row">
+          <span class="row-label">Auto-paste result</span>
+          <button
+            class="switch"
+            id="toggle-auto-paste"
+            type="button"
+            role="switch"
+            aria-checked="false"
+          >
+            <span class="knob"></span>
+          </button>
+        </div>
+        <div class="row">
+          <span class="row-label">Copy to clipboard</span>
+          <button
+            class="switch"
+            id="toggle-copy-clipboard"
+            type="button"
+            role="switch"
+            aria-checked="false"
+          >
+            <span class="knob"></span>
+          </button>
+        </div>
+      </section>
+
+      <hr class="divider" />
+
+      <!-- Model -->
+      <section class="section">
+        <label class="label" for="model">Model</label>
+        <select class="select" id="model">
+          <option value="whisper-large-v3-turbo">whisper-large-v3-turbo</option>
+          <option value="whisper-large-v3">whisper-large-v3</option>
+        </select>
+      </section>
+
+      <div class="footer">
+        <button class="btn-done" id="done-btn" type="button">Done</button>
+      </div>
+    </div>
+  </body>
+</html>

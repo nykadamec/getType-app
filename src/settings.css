@@ -1,0 +1,313 @@
+/* gettype — settings (light minimal, monochrome) */
+
+:root {
+  --bg: #ffffff;
+  --surface: #f5f5f5;
+  --surface-2: #efefef;
+  --border: #e6e6e6;
+  --text: #171717;
+  --text-2: #6b6b6b;
+  --text-3: #a8a8a8;
+  --inverse: #171717;
+  --inverse-text: #ffffff;
+  --switch-off: #d4d4d4;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  background: var(--bg);
+}
+
+body {
+  font-family: -apple-system, system-ui, "Inter", sans-serif;
+  font-size: 13px;
+  color: var(--text);
+  padding: 24px;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  cursor: default;
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.label {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+button {
+  font-family: inherit;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 1px solid var(--text-3);
+  outline-offset: 2px;
+}
+
+/* ---------- Groq API key ---------- */
+
+.key-wrap {
+  position: relative;
+}
+
+.input {
+  width: 100%;
+  height: 40px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 0 44px 0 12px;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--text);
+  outline: none;
+  user-select: text;
+  cursor: text;
+}
+
+.input::placeholder {
+  color: var(--text-3);
+}
+
+.input:focus {
+  border-color: var(--text-3);
+}
+
+.eye-btn {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.eye-btn:hover {
+  color: var(--text);
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.eye-btn .icon {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.eye-btn .icon-eye-off {
+  display: none;
+}
+
+.key-wrap.shown .icon-eye {
+  display: none;
+}
+
+.key-wrap.shown .icon-eye-off {
+  display: block;
+}
+
+.hint-link {
+  font-size: 12px;
+  color: var(--text-2);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  width: fit-content;
+}
+
+.hint-link:hover {
+  color: var(--text);
+}
+
+/* ---------- Shortcut ---------- */
+
+.keycap {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-family: "Inter", -apple-system, system-ui, sans-serif;
+  font-size: 14px;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.keycap:hover {
+  border-color: var(--text-3);
+}
+
+.keycap.listening {
+  color: var(--text-2);
+}
+
+.keycap .dot {
+  color: var(--text);
+}
+
+.segmented {
+  display: flex;
+  width: 100%;
+  padding: 3px;
+  background: var(--surface-2);
+  border-radius: 8px;
+}
+
+.segmented button {
+  flex: 1;
+  height: 30px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.segmented button.active {
+  background: var(--inverse);
+  color: var(--inverse-text);
+}
+
+.caption {
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+/* ---------- Output ---------- */
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 40px;
+}
+
+.row-label {
+  font-size: 13px;
+}
+
+.switch {
+  position: relative;
+  flex-shrink: 0;
+  width: 40px;
+  height: 22px;
+  border: none;
+  border-radius: 999px;
+  background: var(--switch-off);
+  padding: 0;
+  cursor: pointer;
+  transition: background 0.18s ease;
+}
+
+.switch .knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+  transition: left 0.18s ease;
+}
+
+.switch.on {
+  background: var(--inverse);
+}
+
+.switch.on .knob {
+  left: 20px;
+}
+
+/* ---------- Model ---------- */
+
+.divider {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 0;
+}
+
+.select {
+  width: 100%;
+  height: 40px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background-color: var(--surface);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%236B6B6B' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding: 0 32px 0 12px;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--text);
+  appearance: none;
+  -webkit-appearance: none;
+  outline: none;
+  cursor: pointer;
+}
+
+.select:focus {
+  border-color: var(--text-3);
+}
+
+/* ---------- Footer ---------- */
+
+.footer {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.btn-done {
+  height: 36px;
+  padding: 0 20px;
+  border: none;
+  border-radius: 8px;
+  background: var(--inverse);
+  color: var(--inverse-text);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.btn-done:hover {
+  opacity: 0.9;
+}
+
+.btn-done:active {
+  opacity: 0.8;
+}

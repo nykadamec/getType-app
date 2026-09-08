@@ -1,0 +1,12 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "settings",
+  "description": "Capability for the settings window (hide via Done button, open help links)",
+  "windows": ["settings"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-hide",
+    "opener:default",
+    "opener:allow-open-url"
+  ]
+}

@@ -2,7 +2,9 @@
 
 mod audio;
 mod hotkey;
+mod output;
 mod settings;
+mod stt;
 
 use std::sync::Mutex;
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};

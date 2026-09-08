@@ -49,6 +49,11 @@ fn lock_recorder(app: &AppHandle) -> MutexGuard<'_, Recorder> {
 }
 
 fn emit_error(app: &AppHandle, message: impl Into<String>) {
+    // Chybová větev končí vždy viditelným stavem: pilulku schováváme tady,
+    // ať žádná chyba nezanechá okno viset.
+    if let Some(pill) = pill_window(app) {
+        let _ = pill.hide();
+    }
     let _ = app.emit("recording-error", json!({ "message": message.into() }));
 }
 
@@ -143,6 +148,8 @@ pub fn start(app: &AppHandle) {
 }
 
 /// Stopne stream, resampluje na 16 kHz mono a zapíše WAV. Resetuje stav.
+/// Úspěch předává dokonalý WAV do `stt::transcribe` (pilulka přechází do
+/// stavu „překládám“); chyby jdou přes `emit_error` (schovává pilulku).
 pub fn stop(app: &AppHandle) {
     // Stream vyjmeme pod zámkem, ale dropujeme až po odemčení (Drop
     // streamu může chvíli blokovat; audio thread mezitím klidně dokončí callback).
@@ -166,9 +173,6 @@ pub fn stop(app: &AppHandle) {
     drop(stream);
 
     let duration_ms = started_at.elapsed().as_millis();
-    if let Some(pill) = pill_window(app) {
-        let _ = pill.hide();
-    }
 
     if duration_ms < MIN_DURATION_MS {
         emit_error(app, "Recording too short");
@@ -197,6 +201,10 @@ pub fn stop(app: &AppHandle) {
             "path": path.to_string_lossy(),
         }),
     );
+
+    // Pilulka zůstává viditelná (timer už stopnutý) a přechází do stavu
+    // „překládám“ — skrývá ji až stt/output v koncovém stavu (úspěch i chyba).
+    crate::stt::transcribe(app.clone(), path);
 }
 
 /// Postaví input stream pro konkrétní sample typ; callback zapisuje do bufferu.

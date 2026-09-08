@@ -208,6 +208,11 @@ select:focus-visible {
   color: var(--text-2);
 }
 
+/* Decentní poznámka u Output řádků (12px, #A8A8A8) */
+.caption-note {
+  color: #a8a8a8;
+}
+
 /* ---------- Output ---------- */
 
 .row {

@@ -71,3 +71,51 @@ body {
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.02em;
 }
+
+/* ---------- transcribing (Groq zpracovává zvuk) ---------- */
+
+/* Tečky stojí na místě timeru (stejné zarovnání); defaultně skryté. */
+#dots {
+  display: none;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+
+#dots .dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #171717;
+  /* jemný opacity pulz — od plné barvy (#171717) po ≈ #A8A8A8 na bílém */
+  animation: dot-pulse 1.2s ease-in-out infinite;
+}
+
+#dots .dot:nth-child(1) { animation-delay: 0s; }
+#dots .dot:nth-child(2) { animation-delay: 0.2s; }
+#dots .dot:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes dot-pulse {
+  from {
+    opacity: 0.38; /* #171717 @ 38 % ≈ #A8A8A8 na bílém pozadí */
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Stav přepíná pilulka jen přes class na body (pill.js). */
+body.transcribing #timer { display: none; }
+
+body.transcribing #dots { display: flex; }
+
+/* Latky zšednou a animace zpomalí (≈ 2× delší cyklus). */
+body.transcribing .bar { background: #a8a8a8; }
+
+body.transcribing .bar:nth-child(1) { animation-duration: 1280ms; }
+body.transcribing .bar:nth-child(2) { animation-duration: 1560ms; }
+body.transcribing .bar:nth-child(3) { animation-duration: 1400ms; }
+body.transcribing .bar:nth-child(4) { animation-duration: 1200ms; }
+body.transcribing .bar:nth-child(5) { animation-duration: 1640ms; }
+body.transcribing .bar:nth-child(6) { animation-duration: 1320ms; }
+body.transcribing .bar:nth-child(7) { animation-duration: 1480ms; }

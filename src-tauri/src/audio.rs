@@ -182,7 +182,16 @@ pub fn stop(app: &AppHandle) {
     );
     let resampled = resample_linear(&raw, sample_rate, TARGET_SAMPLE_RATE);
 
-    let path = match write_wav(&resampled) {
+    // DSP preprocessing (trim → HPF → normalizace); ticho → Err, ne WAV.
+    let processed = match crate::preprocess::process(&resampled) {
+        Ok(processed) => processed,
+        Err(e) => {
+            emit_error(app, e);
+            return;
+        }
+    };
+
+    let path = match write_wav(&processed) {
         Ok(path) => path,
         Err(e) => {
             emit_error(app, format!("WAV write failed: {e}"));

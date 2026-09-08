@@ -6,6 +6,7 @@ mod hotkey;
 mod output;
 mod permissions;
 mod pill;
+mod preprocess;
 mod settings;
 mod stt;
 mod verify;

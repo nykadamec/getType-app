@@ -28,13 +28,39 @@ body {
   font-family: -apple-system, system-ui, "Inter", sans-serif;
   font-size: 13px;
   color: var(--text);
-  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
   -webkit-font-smoothing: antialiased;
   user-select: none;
   cursor: default;
 }
 
+/* ---------- Titlebar (hidden-title styl, nativní semafory) ---------- */
+
+.titlebar {
+  height: 44px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  padding-left: 84px; /* místo pro nativní traffic lights */
+  background: #ffffff;
+  border-bottom: none;
+  user-select: none;
+}
+
+.titlebar-title {
+  font-family: -apple-system, BlinkMacSystemFont, "Inter", sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  color: #171717;
+  letter-spacing: 0;
+}
+
 .panel {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px;
   display: flex;
   flex-direction: column;
   gap: 24px;

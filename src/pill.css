@@ -12,6 +12,16 @@ body {
   overflow: hidden;
 }
 
+/* ---------- dissolve (motion/mini, řízeno z pill.js — žádný CSS transition) ---------- */
+
+/* Výchozí stav = neviditelná: window.show() neudělá flash obsahu,
+   dissolve in přijde až s eventem (recording-started / transcribing-started).
+   Animaci řídí motion (WAAPI) inline — opacity/transform transition tu
+   nesmí být, aby se s motion nebily. */
+body {
+  opacity: 0;
+}
+
 #pill {
   width: 128px;
   height: 40px;

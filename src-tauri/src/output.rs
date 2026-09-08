@@ -7,7 +7,7 @@
 use arboard::Clipboard;
 use enigo::{Direction, Enigo, Key, Keyboard, Settings};
 use std::time::Duration;
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 
 use crate::settings;
 
@@ -20,11 +20,11 @@ const RESTORE_DELAY: Duration = Duration::from_millis(250);
 /// Aplikuje výsledek dle configu (auto_paste, copy_clipboard).
 ///
 /// Skrytí pilulky je vždy první krok — paste nesmí proběhnout, dokud je
-/// okno viditelné (jinak by se ⌘V mohlo vstříknout do pilulky).
+/// okno viditelné. Fade-out je v pořádku: okno nikdy nemá focus, ⌘V jde do
+/// cílové appky (CSS ztrácí opacity, paste delay 80 ms zůstává); reálné
+/// window.hide() přichází až po fade animaci z pill::fade_out.
 pub fn apply(app: &AppHandle, text: String) {
-    if let Some(pill) = app.get_webview_window("pill") {
-        let _ = pill.hide();
-    }
+    crate::pill::fade_out(app);
 
     let config = settings::load();
 

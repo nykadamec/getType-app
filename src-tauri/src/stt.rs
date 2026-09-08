@@ -7,26 +7,25 @@
 use serde_json::json;
 use std::path::PathBuf;
 use std::time::Duration;
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter};
 
 use crate::settings;
 
 const GROQ_URL: &str = "https://api.groq.com/openai/v1/audio/transcriptions";
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
-fn hide_pill(app: &AppHandle) {
-    if let Some(pill) = app.get_webview_window("pill") {
-        let _ = pill.hide();
-    }
+/// Koncový stav pilulky: CSS fade-out + zpožděné hide (idempotentní).
+fn fade_out_pill(app: &AppHandle) {
+    crate::pill::fade_out(app);
 }
 
-/// Chybová cesta: event do frontendu + skrytí pilulky (koncový stav).
+/// Chybová cesta: event do frontendu + fade-out pilulky (koncový stav).
 fn emit_error(app: &AppHandle, message: impl Into<String>) {
     let _ = app.emit(
         "transcription-error",
         json!({ "message": message.into() }),
     );
-    hide_pill(app);
+    fade_out_pill(app);
 }
 
 /// Spustí transkripci v async tasku (UI thread nikdy nezastaví).
@@ -41,7 +40,7 @@ pub fn transcribe(app: AppHandle, path: PathBuf) {
                     "transcription-complete",
                     json!({ "chars": text.chars().count() }),
                 );
-                hide_pill(&app); // idempotentní pojistka
+                fade_out_pill(&app); // idempotentní pojistka
             }
             Err(message) => {
                 eprintln!("gettype: transcription failed: {message}");

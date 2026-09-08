@@ -33,6 +33,13 @@ enigo = "0.6.1"
 # runtime, na němž běží tauri::async_runtime, žádné blokování executoru.
 tokio = { version = "1", default-features = false, features = ["time"] }
 
+# macOS: bílé pozadí NSWindow pod transparentním titlebarem (settings).
+# Transparent toolbar ukazuje barvu NSWindow, ne webview — bez toho je
+# v dark mode nad bílým stripem tmavý pruh. Viz Tauri docs „Transparent
+# Titlebar with Custom Window Background Color".
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2-app-kit = { version = "0.3", features = ["NSColor", "NSWindow"] }
+
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
 [profile.release]

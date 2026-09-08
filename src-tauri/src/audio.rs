@@ -49,16 +49,10 @@ fn lock_recorder(app: &AppHandle) -> MutexGuard<'_, Recorder> {
 }
 
 fn emit_error(app: &AppHandle, message: impl Into<String>) {
-    // Chybová větev končí vždy viditelným stavem: pilulku schováváme tady,
-    // ať žádná chyba nezanechá okno viset.
-    if let Some(pill) = pill_window(app) {
-        let _ = pill.hide();
-    }
+    // Chybová větev končí vždy viditelným stavem: pilulku fade-outneme tady,
+    // ať žádná chyba nezanechá okno viset (hide až po CSS animaci).
+    crate::pill::fade_out(app);
     let _ = app.emit("recording-error", json!({ "message": message.into() }));
-}
-
-fn pill_window(app: &AppHandle) -> Option<tauri::WebviewWindow> {
-    app.get_webview_window("pill")
 }
 
 pub fn is_recording(app: &AppHandle) -> bool {
@@ -141,9 +135,8 @@ pub fn start(app: &AppHandle) {
     }
 
     // Pilulka se jen ukáže — bez focusu, ať nevytrhne uživatele z aplikace.
-    if let Some(pill) = pill_window(app) {
-        let _ = pill.show();
-    }
+    // show() zároveň zneplatní čekající fade-hide z předchozího nahrávání.
+    crate::pill::show(app);
     let _ = app.emit("recording-started", json!({ "sample_rate": sample_rate }));
 }
 

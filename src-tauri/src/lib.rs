@@ -3,6 +3,7 @@
 mod audio;
 mod hotkey;
 mod output;
+mod pill;
 mod settings;
 mod stt;
 
@@ -76,11 +77,39 @@ pub fn run() {
                 WebviewUrl::App("settings.html".into()),
             )
             .title("Settings")
-            .inner_size(560.0, 660.0)
+            .inner_size(560.0, 700.0) // +44 px na vlastní titlebar strip
             .resizable(false)
             .visible(false)
             .decorations(true)
-            .build()?;
+            // macOS „hidden title“ styl (jako System Settings): nativní
+            // traffic lights zůstávají, nativní titulek je skrytý a obsah
+            // se táhne až k vršku — vlastní strip řeší settings.html/css.
+            // API ověřeno proti tauri 2.11.5: TitleBarStyle je re-export
+            // tauri_utils (crate::TitleBarStyle), hidden_title(bool) na
+            // WebviewWindowBuilder (macOS only). Transparent místo Overlay:
+            // toolbar je průhledný a ukazuje bílou z CSS — jeden zdroj
+            // pravdy, plynulý přechod bez šedého nádechu overlay vrstvy.
+            .title_bar_style(tauri::TitleBarStyle::Transparent)
+            .hidden_title(true)
+            .build()
+            .map(|win| {
+                // Bílý background NSWindow (Tauri docs „Transparent Titlebar
+                // with Custom Window Background Color"): transparentní toolbar
+                // ukazuje barvu NSWindow, ne webview — bez toho je v dark
+                // mode nad bílým stripem tmavý pruh.
+                #[cfg(target_os = "macos")]
+                {
+                    use objc2_app_kit::{NSColor, NSWindow};
+                    if let Ok(ptr) = win.ns_window() {
+                        unsafe {
+                            let ns_window = &*(ptr as *mut NSWindow);
+                            let white = NSColor::whiteColor();
+                            ns_window.setBackgroundColor(Some(&white));
+                        }
+                    }
+                }
+                win
+            })?;
 
             // Recording pill: 128×40, vodorovně centrovaná, ~56 px od vršku.
             // Monitor dává fyzické px → vydělíme scale factor (Retina 2×).

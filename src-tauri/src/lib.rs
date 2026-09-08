@@ -89,8 +89,16 @@ pub fn run() {
             let quit = MenuItem::with_id(app, "quit", "Quit gettype", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&settings_item, &quit])?;
 
+            // Vlastní A-Waveform tray ikona (černá na transparentní) v template
+            // režimu — macOS ji přebarví podle světlého/tmavého menu baru.
+            // API ověřeno proti tauri 2.11.5: TrayIconBuilder::icon_as_template
+            // (src/tray/mod.rs:295), png dekódování přes image-png feature.
+            let tray_icon =
+                tauri::image::Image::from_bytes(include_bytes!("../icons/tray-icon.png"))?;
+
             TrayIconBuilder::with_id("main-tray")
-                .icon(app.default_window_icon().unwrap().clone())
+                .icon(tray_icon)
+                .icon_as_template(true)
                 .tooltip("gettype")
                 .menu(&menu)
                 .show_menu_on_left_click(true)

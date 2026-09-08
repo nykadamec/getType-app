@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+  <!-- gettype tray: 5 svislých sloupků, šířka 2px, mezera 1.5px (5*2+4*1.5=16),
+       výšky [0.34, 0.6, 0.75, 0.49, 0.26] × 16 (max 12px), centrované, rx 1.
+       Černá na transparentní = macOS template image. -->
+  <rect x="0" y="5.28" width="2" height="5.44" rx="1" fill="#000000"/>
+  <rect x="3.5" y="3.2" width="2" height="9.6" rx="1" fill="#000000"/>
+  <rect x="7" y="2" width="2" height="12" rx="1" fill="#000000"/>
+  <rect x="10.5" y="4.08" width="2" height="7.84" rx="1" fill="#000000"/>
+  <rect x="14" y="5.92" width="2" height="4.16" rx="1" fill="#000000"/>
+</svg>

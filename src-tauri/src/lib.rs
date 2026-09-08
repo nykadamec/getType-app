@@ -6,9 +6,11 @@ mod output;
 mod pill;
 mod settings;
 mod stt;
+mod verify;
 
 use std::sync::Mutex;
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri_plugin_autostart::ManagerExt;
 
 #[tauri::command]
 fn load_settings() -> settings::LoadedSettings {
@@ -46,10 +48,31 @@ fn save_api_key(key: String) -> Result<(), String> {
     }
 }
 
+/// Zapne/vypne spouštění po přihlášení (macOS LaunchAgent).
+#[tauri::command]
+fn set_launch_at_login(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
+    let manager = app.autolaunch();
+    if enabled {
+        manager.enable().map_err(|e| e.to_string())
+    } else {
+        manager.disable().map_err(|e| e.to_string())
+    }
+}
+
+/// Aktuální stav spouštění po přihlášení.
+#[tauri::command]
+fn get_launch_at_login(app: tauri::AppHandle) -> Result<bool, String> {
+    app.autolaunch().is_enabled().map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
         .plugin(hotkey::plugin())
         .setup(|app| {
             // No Dock icon — menu bar only (macOS)
@@ -178,6 +201,9 @@ pub fn run() {
             load_settings,
             save_config,
             save_api_key,
+            verify::verify_api_key,
+            set_launch_at_login,
+            get_launch_at_login,
             apply_hotkey
         ])
         .run(tauri::generate_context!())

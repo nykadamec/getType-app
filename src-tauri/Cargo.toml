@@ -32,6 +32,7 @@ enigo = "0.6.1"
 # time: tokio::time::sleep pro async čekání (paste delay / restore) — stejný
 # runtime, na němž běží tauri::async_runtime, žádné blokování executoru.
 tokio = { version = "1", default-features = false, features = ["time"] }
+tauri-plugin-autostart = "2.5.1"
 
 # macOS: bílé pozadí NSWindow pod transparentním titlebarem (settings).
 # Transparent toolbar ukazuje barvu NSWindow, ne webview — bez toho je

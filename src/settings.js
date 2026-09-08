@@ -29,6 +29,7 @@ const SECTIONS = {
   shortcut: { title: "Shortcut", sub: "Global hotkey that starts dictation." },
   output: { title: "Output", sub: "How transcripts reach your apps." },
   model: { title: "Model", sub: "Which Groq speech model and language to use." },
+  history: { title: "History", sub: "Your recent dictations — click any entry to copy it back." },
 };
 
 const LANG_LABELS = {
@@ -81,6 +82,10 @@ const els = {
   previewShortcut: $("preview-shortcut"),
   previewOutput: $("preview-output"),
   previewModel: $("preview-model"),
+  historyList: $("history-list"),
+  historyEmpty: $("history-empty"),
+  historyCount: $("history-count"),
+  clearHistory: $("clear-history-btn"),
 };
 
 let config = { ...DEFAULT_CONFIG };
@@ -120,6 +125,7 @@ function showSection(name) {
     els.sub.textContent = meta.sub;
   }
   if (name === "shortcut" && listening) stopListening();
+  if (name === "history") loadHistory();
 }
 
 function filterNav() {
@@ -330,6 +336,145 @@ function openPrivacy(url) {
   }
 }
 
+/* ---------- history ---------- */
+
+let historyItems = [];
+let copyFeedbackTimer = null;
+
+function formatHistoryTime(createdAt) {
+  const d = new Date(createdAt * 1000);
+  if (Number.isNaN(d.getTime())) return "";
+  const now = new Date();
+  const sameDay = (a, b) =>
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate();
+  const time = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  if (sameDay(d, now)) return `today ${time}`;
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  if (sameDay(d, yesterday)) return `yesterday ${time}`;
+  return d.toLocaleDateString([], { day: "numeric", month: "numeric", year: "numeric" });
+}
+
+function historyMetaLabel(entry) {
+  const parts = [formatHistoryTime(entry.created_at)];
+  if (typeof entry.chars === "number" && entry.chars > 0) parts.push(`${entry.chars} chars`);
+  return parts.filter(Boolean).join(" · ");
+}
+
+function showCopyFeedback(itemEl) {
+  document.querySelectorAll(".hist-item.copied").forEach((el) => {
+    if (el !== itemEl) el.classList.remove("copied");
+  });
+  document.querySelectorAll(".hist-copied").forEach((el) => {
+    if (el.closest(".hist-item") !== itemEl) el.hidden = true;
+  });
+  const flag = itemEl.querySelector(".hist-copied");
+  if (flag) flag.hidden = false;
+  itemEl.classList.add("copied");
+  clearTimeout(copyFeedbackTimer);
+  copyFeedbackTimer = setTimeout(() => {
+    itemEl.classList.remove("copied");
+    if (flag) flag.hidden = true;
+  }, 1000);
+}
+
+async function copyHistoryEntry(id, itemEl) {
+  try {
+    await invoke("copy_history_entry", { id });
+  } catch (err) {
+    console.error("copy_history_entry failed", err);
+    return;
+  }
+  if (itemEl) showCopyFeedback(itemEl);
+}
+
+function renderHistory(list) {
+  historyItems = Array.isArray(list) ? list : [];
+  els.historyList.textContent = "";
+  const empty = historyItems.length === 0;
+  els.historyEmpty.hidden = !empty;
+  els.historyList.style.display = empty ? "none" : "";
+  els.clearHistory.disabled = empty;
+  els.historyCount.textContent = empty
+    ? ""
+    : `${historyItems.length} dictation${historyItems.length === 1 ? "" : "s"}`;
+
+  for (const entry of historyItems) {
+    const item = document.createElement("div");
+    item.className = "hist-item";
+    item.dataset.id = String(entry.id);
+
+    const main = document.createElement("button");
+    main.className = "hist-main";
+    main.type = "button";
+    main.title = "Click to copy";
+
+    const text = document.createElement("span");
+    text.className = "hist-text";
+    text.textContent = entry.text || "";
+    text.title = entry.text || "";
+
+    const meta = document.createElement("span");
+    meta.className = "hist-meta";
+    meta.textContent = historyMetaLabel(entry);
+
+    const copied = document.createElement("span");
+    copied.className = "hist-copied";
+    copied.textContent = "Copied";
+    copied.hidden = true;
+
+    main.append(text, meta, copied);
+    main.addEventListener("click", () => copyHistoryEntry(entry.id, item));
+
+    const actions = document.createElement("div");
+    actions.className = "hist-actions";
+
+    const copyBtn = document.createElement("button");
+    copyBtn.className = "icon-btn hist-copy";
+    copyBtn.type = "button";
+    copyBtn.title = "Copy";
+    copyBtn.setAttribute("aria-label", "Copy entry");
+    copyBtn.innerHTML =
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2" ry="2" /><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" /></svg>';
+    copyBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      copyHistoryEntry(entry.id, item);
+    });
+
+    const delBtn = document.createElement("button");
+    delBtn.className = "icon-btn hist-del";
+    delBtn.type = "button";
+    delBtn.title = "Delete";
+    delBtn.setAttribute("aria-label", "Delete entry");
+    delBtn.innerHTML =
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>';
+    delBtn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      try {
+        const next = await invoke("delete_history_entry", { id: entry.id });
+        renderHistory(next);
+      } catch (err) {
+        console.error("delete_history_entry failed", err);
+      }
+    });
+
+    actions.append(copyBtn, delBtn);
+    item.append(main, actions);
+    els.historyList.append(item);
+  }
+}
+
+async function loadHistory() {
+  try {
+    const list = await invoke("list_history");
+    renderHistory(list);
+  } catch (err) {
+    console.error("list_history failed", err);
+  }
+}
+
 /* ---------- init ---------- */
 
 (async () => {
@@ -427,12 +572,34 @@ function openPrivacy(url) {
   els.openMic.addEventListener("click", () => openPrivacy(PRIVACY_URLS.mic));
   els.openA11y.addEventListener("click", () => openPrivacy(PRIVACY_URLS.a11y));
 
-  window.addEventListener("focus", refreshPermissions);
+  els.clearHistory.addEventListener("click", async () => {
+    if (historyItems.length === 0) return;
+    try {
+      await invoke("clear_history");
+      renderHistory([]);
+    } catch (err) {
+      console.error("clear_history failed", err);
+    }
+  });
+
+  window.addEventListener("focus", () => {
+    refreshPermissions();
+    loadHistory();
+  });
   document.addEventListener("visibilitychange", () => {
-    if (!document.hidden) refreshPermissions();
+    if (!document.hidden) {
+      refreshPermissions();
+      loadHistory();
+    }
   });
 
   refreshPermissions();
+  loadHistory();
+
+  const Tauri = window.__TAURI__;
+  if (Tauri && Tauri.event && typeof Tauri.event.listen === "function") {
+    Tauri.event.listen("transcription-complete", () => loadHistory());
+  }
 
   els.model.addEventListener("change", () => {
     config.model = els.model.value;

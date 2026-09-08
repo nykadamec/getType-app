@@ -129,11 +129,20 @@
         <!-- General section -->
         <section class="pane" id="pane-general">
           <div class="card">
-            <label class="field-label" for="language">Dictation language</label>
-            <select class="select" id="language">
-              <option value="cs">Čeština</option>
-              <option value="">Auto-detect</option>
-            </select>
+            <div class="perm-block">
+              <div class="row">
+                <span class="row-label">Microphone</span>
+                <span class="pill" id="mic-pill"><span class="pill-dot" id="mic-dot"></span><span id="mic-status">Checking…</span></span>
+              </div>
+              <button class="sys-link" id="open-mic-settings" type="button">Open System Settings</button>
+            </div>
+            <div class="perm-block">
+              <div class="row">
+                <span class="row-label">Auto-paste (Accessibility)</span>
+                <span class="pill" id="a11y-pill"><span class="pill-dot" id="a11y-dot"></span><span id="a11y-status">Checking…</span></span>
+              </div>
+              <button class="sys-link" id="open-a11y-settings" type="button">Open System Settings</button>
+            </div>
             <div class="row">
               <span class="row-label">Launch at login</span>
               <button class="switch" id="toggle-launch" type="button" role="switch" aria-checked="false"><span class="knob"></span></button>
@@ -179,6 +188,20 @@
               <option value="whisper-large-v3">whisper-large-v3</option>
             </select>
             <p class="hint">Faster turbo by default; full model for tricky audio.</p>
+            <label class="field-label" for="language">Voice language</label>
+            <select class="select" id="language">
+              <option value="">Auto-detect</option>
+              <option value="cs">Čeština</option>
+              <option value="sk">Slovenština</option>
+              <option value="en">English</option>
+              <option value="de">Deutsch</option>
+              <option value="pl">Polski</option>
+              <option value="uk">Українська</option>
+              <option value="ru">Русский</option>
+              <option value="es">Español</option>
+              <option value="fr">Français</option>
+            </select>
+            <p class="hint">Fixed language = more accurate and faster transcription; Auto-detect detects the language automatically.</p>
           </div>
         </section>
       </main>

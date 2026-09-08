@@ -25,10 +25,29 @@ const DEFAULT_CONFIG = {
 
 const SECTIONS = {
   apikey: { title: "API key", sub: "Connect GetType to Groq — stored only on this Mac." },
-  general: { title: "General", sub: "Language, startup and app info." },
+  general: { title: "General", sub: "Permissions, startup and app info." },
   shortcut: { title: "Shortcut", sub: "Global hotkey that starts dictation." },
   output: { title: "Output", sub: "How transcripts reach your apps." },
-  model: { title: "Model", sub: "Which Groq speech model to use." },
+  model: { title: "Model", sub: "Which Groq speech model and language to use." },
+};
+
+const LANG_LABELS = {
+  "": "Auto-detect",
+  cs: "Čeština",
+  sk: "Slovenština",
+  en: "English",
+  de: "Deutsch",
+  pl: "Polski",
+  uk: "Українська",
+  ru: "Русский",
+  es: "Español",
+  fr: "Français",
+};
+
+const PRIVACY_URLS = {
+  mic: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone",
+  a11y: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
+  fallback: "x-apple.systempreferences:com.apple.preference.security",
 };
 
 const $ = (id) => document.getElementById(id);
@@ -53,6 +72,12 @@ const els = {
   language: $("language"),
   launch: $("toggle-launch"),
   doneBtn: $("done-btn"),
+  micDot: $("mic-dot"),
+  micStatus: $("mic-status"),
+  a11yDot: $("a11y-dot"),
+  a11yStatus: $("a11y-status"),
+  openMic: $("open-mic-settings"),
+  openA11y: $("open-a11y-settings"),
   previewShortcut: $("preview-shortcut"),
   previewOutput: $("preview-output"),
   previewModel: $("preview-model"),
@@ -246,7 +271,7 @@ function onOff(v) {
 function renderPreviews() {
   els.previewShortcut.textContent = `${hotkeyToDisplay(config.hotkey)} · ${modeLabel()}`;
   els.previewOutput.textContent = `Auto-paste ${onOff(config.auto_paste)} · Clipboard ${onOff(config.copy_clipboard)}`;
-  els.previewModel.textContent = config.model;
+  els.previewModel.textContent = `${config.model} · ${LANG_LABELS[config.language] ?? LANG_LABELS["cs"]}`;
 }
 
 /* ---------- render helpers ---------- */
@@ -268,6 +293,41 @@ function bindSwitch(el, key) {
     renderSwitch(el, config[key]);
     scheduleSave();
   });
+}
+
+/* ---------- permissions (read-only status) ---------- */
+
+function renderPill(dotEl, textEl, allowed, label) {
+  dotEl.classList.toggle("on", allowed);
+  textEl.textContent = label;
+}
+
+async function refreshPermissions() {
+  try {
+    const mic = await invoke("get_mic_permission");
+    if (mic === "granted") renderPill(els.micDot, els.micStatus, true, "Allowed");
+    else if (mic === "not-determined") renderPill(els.micDot, els.micStatus, false, "Not asked yet");
+    else renderPill(els.micDot, els.micStatus, false, "Not allowed");
+  } catch (err) {
+    console.error("get_mic_permission failed", err);
+    renderPill(els.micDot, els.micStatus, false, "Not allowed");
+  }
+  try {
+    const trusted = await invoke("get_accessibility_permission");
+    renderPill(els.a11yDot, els.a11yStatus, !!trusted, trusted ? "Allowed" : "Not allowed");
+  } catch (err) {
+    console.error("get_accessibility_permission failed", err);
+    renderPill(els.a11yDot, els.a11yStatus, false, "Not allowed");
+  }
+}
+
+function openPrivacy(url) {
+  const opener = window.__TAURI__ && window.__TAURI__.opener;
+  if (opener && opener.openUrl) {
+    opener.openUrl(url).catch(() => opener.openUrl(PRIVACY_URLS.fallback).catch((err) => {
+      console.error("openUrl failed", err);
+    }));
+  }
 }
 
 /* ---------- init ---------- */
@@ -363,6 +423,16 @@ function bindSwitch(el, key) {
       renderSwitch(els.launch, !next);
     }
   });
+
+  els.openMic.addEventListener("click", () => openPrivacy(PRIVACY_URLS.mic));
+  els.openA11y.addEventListener("click", () => openPrivacy(PRIVACY_URLS.a11y));
+
+  window.addEventListener("focus", refreshPermissions);
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) refreshPermissions();
+  });
+
+  refreshPermissions();
 
   els.model.addEventListener("change", () => {
     config.model = els.model.value;

@@ -1,39 +1,17 @@
-// gettype — settings window logic (vanilla JS, global Tauri API)
+// gettype — Settings Window V2 (sidebar + sekce, plna verze)
 
-const MASK = "gsk_••••••••••";
+const MASKED_TAIL = "gsk_••••8f2a";
 
 const MODIFIER_SYMBOLS = { Command: "⌘", Option: "⌥", Control: "⌃", Shift: "⇧" };
 const MODIFIER_CODES = new Set([
-  "MetaLeft",
-  "MetaRight",
-  "AltLeft",
-  "AltRight",
-  "ControlLeft",
-  "ControlRight",
-  "ShiftLeft",
-  "ShiftRight",
+  "MetaLeft", "MetaRight", "AltLeft", "AltRight",
+  "ControlLeft", "ControlRight", "ShiftLeft", "ShiftRight",
 ]);
 const KEY_NAMES = {
-  Space: "Space",
-  Minus: "-",
-  Equal: "=",
-  BracketLeft: "[",
-  BracketRight: "]",
-  Backslash: "\\",
-  Semicolon: ";",
-  Quote: "'",
-  Backquote: "`",
-  Comma: ",",
-  Period: ".",
-  Slash: "/",
-  Enter: "Enter",
-  Tab: "Tab",
-  Backspace: "Backspace",
-  ArrowUp: "Up",
-  ArrowDown: "Down",
-  ArrowLeft: "Left",
-  ArrowRight: "Right",
-  Escape: "Esc",
+  Space: "Space", Minus: "-", Equal: "=", BracketLeft: "[", BracketRight: "]",
+  Backslash: "\\", Semicolon: ";", Quote: "'", Backquote: "`", Comma: ",",
+  Period: ".", Slash: "/", Enter: "Enter", Tab: "Tab", Backspace: "Backspace",
+  ArrowUp: "Up", ArrowDown: "Down", ArrowLeft: "Left", ArrowRight: "Right", Escape: "Esc",
 };
 
 const DEFAULT_CONFIG = {
@@ -45,26 +23,45 @@ const DEFAULT_CONFIG = {
   language: "cs",
 };
 
+const SECTIONS = {
+  apikey: { title: "API key", sub: "Connect GetType to Groq — stored only on this Mac." },
+  general: { title: "General", sub: "Language, startup and app info." },
+  shortcut: { title: "Shortcut", sub: "Global hotkey that starts dictation." },
+  output: { title: "Output", sub: "How transcripts reach your apps." },
+  model: { title: "Model", sub: "Which Groq speech model to use." },
+};
+
 const $ = (id) => document.getElementById(id);
 
 const els = {
+  search: $("nav-search"),
+  navItems: [...document.querySelectorAll(".nav-item")],
+  title: $("section-title"),
+  sub: $("section-sub"),
+  dot: $("key-dot"),
+  status: $("key-status"),
   apiKey: $("api-key"),
-  keyWrap: $("key-wrap"),
-  eyeBtn: $("eye-btn"),
+  error: $("key-error"),
+  saveBtn: $("save-key-btn"),
+  disconnectBtn: $("disconnect-btn"),
   hintLink: $("hint-link"),
   hotkeyBtn: $("hotkey-btn"),
   segmented: $("mode-segmented"),
   autoPaste: $("toggle-auto-paste"),
   copyClipboard: $("toggle-copy-clipboard"),
   model: $("model"),
+  language: $("language"),
+  launch: $("toggle-launch"),
   doneBtn: $("done-btn"),
+  previewShortcut: $("preview-shortcut"),
+  previewOutput: $("preview-output"),
+  previewModel: $("preview-model"),
 };
 
-let config = null;
-let saveTimer = null;
-let listening = false;
+let config = { ...DEFAULT_CONFIG };
 let hasApiKey = false;
-let keyMasked = false;
+let listening = false;
+let saveTimer = null;
 
 function invoke(cmd, args) {
   return window.__TAURI__.core.invoke(cmd, args);
@@ -75,15 +72,39 @@ function scheduleSave() {
   saveTimer = setTimeout(async () => {
     try {
       await invoke("save_config", { config });
-      // Po uložení přeregistruje globální hotkey, aby změna platila okamžitě.
       await invoke("apply_hotkey");
+      renderPreviews();
     } catch (err) {
       console.error("save_config/apply_hotkey failed", err);
     }
   }, 300);
 }
 
-/* ---------- hotkey helpers ---------- */
+/* ---------- nav + search ---------- */
+
+function showSection(name) {
+  els.navItems.forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.section === name);
+  });
+  document.querySelectorAll(".pane").forEach((pane) => {
+    pane.classList.toggle("active", pane.id === `pane-${name}`);
+  });
+  const meta = SECTIONS[name];
+  if (meta) {
+    els.title.textContent = meta.title;
+    els.sub.textContent = meta.sub;
+  }
+  if (name === "shortcut" && listening) stopListening();
+}
+
+function filterNav() {
+  const q = els.search.value.trim().toLowerCase();
+  els.navItems.forEach((btn) => {
+    btn.hidden = q !== "" && !btn.dataset.label.includes(q);
+  });
+}
+
+/* ---------- hotkey ---------- */
 
 function hotkeyToDisplay(hotkey) {
   let symbols = "";
@@ -148,46 +169,105 @@ function onCaptureKeydown(event) {
   }
   const mods = activeModifiers(event);
   if (MODIFIER_CODES.has(event.code)) {
-    // Live preview while modifiers are held; wait for the main key.
     const symbols = mods.map((m) => MODIFIER_SYMBOLS[m]).join("");
     renderListening(symbols ? `${symbols} …` : "Listening…");
     return;
   }
-  // Stored format: Command/Option/Control/Shift + key name, e.g. "Option+Space".
-  const stored = [...mods, codeToKeyName(event)].join("+");
-  config.hotkey = stored;
+  config.hotkey = [...mods, codeToKeyName(event)].join("+");
   scheduleSave();
   stopListening();
 }
 
 /* ---------- API key ---------- */
 
-function renderApiKeyField() {
-  els.apiKey.value = hasApiKey ? MASK : "";
-  keyMasked = hasApiKey;
-  els.keyWrap.classList.remove("shown");
-  els.apiKey.type = "password";
+function renderKeyStatus() {
+  if (hasApiKey) {
+    els.dot.classList.add("on");
+    els.status.textContent = `Connected · ${MASKED_TAIL}`;
+  } else {
+    els.dot.classList.remove("on");
+    els.status.textContent = "Not connected";
+  }
 }
 
-async function persistApiKey() {
+function showError(msg) {
+  els.error.textContent = msg;
+  els.error.hidden = !msg;
+}
+
+async function onSaveKey() {
   const value = els.apiKey.value.trim();
-  if (keyMasked && value === MASK) return; // untouched mask
-  if (value === MASK) {
-    renderApiKeyField(); // literal mask typed — ignore
+  if (!value) {
+    showError("Enter an API key first");
     return;
   }
-  if (value === "") {
-    // Nothing to save on blur; restore display to the stored state.
-    renderApiKeyField();
-    return;
-  }
+  els.saveBtn.disabled = true;
+  els.saveBtn.textContent = "Verifying…";
+  showError("");
   try {
+    await invoke("verify_api_key", { key: value });
     await invoke("save_api_key", { key: value });
     hasApiKey = true;
-    renderApiKeyField();
+    els.apiKey.value = "";
+    els.apiKey.placeholder = MASKED_TAIL;
+    renderKeyStatus();
+  } catch (err) {
+    showError(typeof err === "string" ? err : String(err));
+  } finally {
+    els.saveBtn.disabled = false;
+    els.saveBtn.textContent = "Save & verify";
+  }
+}
+
+async function onDisconnect() {
+  try {
+    await invoke("save_api_key", { key: "" });
   } catch (err) {
     console.error("save_api_key failed", err);
+    return;
   }
+  hasApiKey = false;
+  els.apiKey.value = "";
+  els.apiKey.placeholder = "gsk_…";
+  showError("");
+  renderKeyStatus();
+}
+
+/* ---------- previews ---------- */
+
+function modeLabel() {
+  return config.mode === "toggle" ? "Toggle" : "Push to talk";
+}
+
+function onOff(v) {
+  return v ? "ON" : "OFF";
+}
+
+function renderPreviews() {
+  els.previewShortcut.textContent = `${hotkeyToDisplay(config.hotkey)} · ${modeLabel()}`;
+  els.previewOutput.textContent = `Auto-paste ${onOff(config.auto_paste)} · Clipboard ${onOff(config.copy_clipboard)}`;
+  els.previewModel.textContent = config.model;
+}
+
+/* ---------- render helpers ---------- */
+
+function renderMode() {
+  els.segmented.querySelectorAll("button").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.mode === config.mode);
+  });
+}
+
+function renderSwitch(el, on) {
+  el.classList.toggle("on", on);
+  el.setAttribute("aria-checked", String(on));
+}
+
+function bindSwitch(el, key) {
+  el.addEventListener("click", () => {
+    config[key] = !config[key];
+    renderSwitch(el, config[key]);
+    scheduleSave();
+  });
 }
 
 /* ---------- init ---------- */
@@ -195,7 +275,7 @@ async function persistApiKey() {
 (async () => {
   try {
     const loaded = await invoke("load_settings");
-    config = loaded.config;
+    config = { ...DEFAULT_CONFIG, ...loaded.config };
     hasApiKey = loaded.has_api_key;
   } catch (err) {
     console.error("load_settings failed", err);
@@ -203,37 +283,43 @@ async function persistApiKey() {
     hasApiKey = false;
   }
 
-  renderApiKeyField();
+  let launchAtLogin = false;
+  try {
+    launchAtLogin = await invoke("get_launch_at_login");
+  } catch (err) {
+    console.error("get_launch_at_login failed", err);
+  }
+
+  // prvotni render
+  renderKeyStatus();
+  els.apiKey.value = "";
+  els.apiKey.placeholder = hasApiKey ? MASKED_TAIL : "gsk_…";
   renderHotkey();
   renderMode();
   renderSwitch(els.autoPaste, config.auto_paste);
   renderSwitch(els.copyClipboard, config.copy_clipboard);
+  renderSwitch(els.launch, launchAtLogin);
   els.model.value = config.model;
+  els.language.value = config.language || "";
+  renderPreviews();
+  showSection("apikey");
 
   /* bindings */
 
-  els.eyeBtn.addEventListener("mousedown", (e) => e.preventDefault());
-  els.eyeBtn.addEventListener("click", () => {
-    const show = els.apiKey.type === "password";
-    els.apiKey.type = show ? "text" : "password";
-    els.keyWrap.classList.toggle("shown", show);
+  els.navItems.forEach((btn) => {
+    btn.addEventListener("click", () => showSection(btn.dataset.section));
+  });
+  els.search.addEventListener("input", filterNav);
+
+  document.querySelectorAll(".preview").forEach((card) => {
+    card.addEventListener("click", () => showSection(card.dataset.goto));
   });
 
-  // Typing over the mask must replace it, not append to it.
-  els.apiKey.addEventListener("mousedown", (e) => {
-    if (keyMasked && document.activeElement !== els.apiKey) {
-      e.preventDefault();
-      els.apiKey.focus();
-      els.apiKey.select();
-    }
+  els.saveBtn.addEventListener("click", onSaveKey);
+  els.apiKey.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") onSaveKey();
   });
-  els.apiKey.addEventListener("focus", () => {
-    if (keyMasked) els.apiKey.select();
-  });
-  els.apiKey.addEventListener("input", () => {
-    keyMasked = false;
-  });
-  els.apiKey.addEventListener("blur", persistApiKey);
+  els.disconnectBtn.addEventListener("click", onDisconnect);
 
   els.hintLink.addEventListener("click", (e) => {
     const opener = window.__TAURI__ && window.__TAURI__.opener;
@@ -267,8 +353,24 @@ async function persistApiKey() {
   bindSwitch(els.autoPaste, "auto_paste");
   bindSwitch(els.copyClipboard, "copy_clipboard");
 
+  els.launch.addEventListener("click", async () => {
+    const next = els.launch.getAttribute("aria-checked") !== "true";
+    renderSwitch(els.launch, next);
+    try {
+      await invoke("set_launch_at_login", { enabled: next });
+    } catch (err) {
+      console.error("set_launch_at_login failed", err);
+      renderSwitch(els.launch, !next);
+    }
+  });
+
   els.model.addEventListener("change", () => {
     config.model = els.model.value;
+    scheduleSave();
+  });
+
+  els.language.addEventListener("change", () => {
+    config.language = els.language.value;
     scheduleSave();
   });
 
@@ -280,24 +382,3 @@ async function persistApiKey() {
     }
   });
 })();
-
-/* ---------- render helpers ---------- */
-
-function renderMode() {
-  els.segmented.querySelectorAll("button").forEach((btn) => {
-    btn.classList.toggle("active", btn.dataset.mode === config.mode);
-  });
-}
-
-function renderSwitch(el, on) {
-  el.classList.toggle("on", on);
-  el.setAttribute("aria-checked", String(on));
-}
-
-function bindSwitch(el, key) {
-  el.addEventListener("click", () => {
-    config[key] = !config[key];
-    renderSwitch(el, config[key]);
-    scheduleSave();
-  });
-}

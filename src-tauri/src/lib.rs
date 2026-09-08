@@ -100,10 +100,14 @@ pub fn run() {
                 WebviewUrl::App("settings.html".into()),
             )
             .title("Settings")
-            .inner_size(560.0, 684.0) // +28 px na vlastní titlebar strip
+            .inner_size(780.0, 580.0)
             .resizable(false)
             .visible(false)
             .decorations(true)
+            // macOS „hidden title“ styl (jako System Settings): nativní
+            // traffic lights zůstávají nad sidebarem, vlastní elipsy
+            // nekreslíme (varianta B — čistší výsledek, viz report).
+            // Sidebar drží 28px drag strip, aby světla měla kam plavat.
             // macOS „hidden title“ styl (jako System Settings): nativní
             // traffic lights zůstávají, nativní titulek je skrytý a obsah
             // se táhne až k vršku — vlastní strip řeší settings.html/css.

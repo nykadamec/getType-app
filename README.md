@@ -20,6 +20,10 @@ That's it — no Dock icon, just a menu bar icon.
 - **Settings** — Groq API key (stored in Keychain, never in files), hotkey, mode, model and language, auto-paste/copy toggles, launch at login.
 - **Permissions in one place** — microphone and Accessibility status (Accessibility is required for ⌘V paste).
 
+## Screenshots
+
+![Settings](assets/screenshots/settings.png)
+
 ## Requirements
 
 - macOS 13+

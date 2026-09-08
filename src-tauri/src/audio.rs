@@ -258,9 +258,17 @@ where
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     out.reserve(data.len() / channels + 1);
     for frame in data.chunks(channels) {
+        // cpal dává normalizované f32 (-1.0..1.0) i pro i16/u16 vstup —
+        // škálovat na i16 rozsah, jinak vznikne ticho (-1/0/1) a Whisper
+        // halucinuje ("Titulky vytvořil JohnyX" na tichu).
         let f32_sample: f32 = frame[0].to_sample();
-        out.push(to_i16(f32_sample));
+        out.push(from_normalized_f32(f32_sample));
     }
+}
+
+/// Normalizovaný vzorek -1.0..1.0 → i16 (vstup z mikrofonu přes cpal).
+fn from_normalized_f32(sample: f32) -> i16 {
+    (sample.clamp(-1.0, 1.0) * i16::MAX as f32).round() as i16
 }
 
 fn to_i16(sample: f32) -> i16 {

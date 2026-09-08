@@ -77,7 +77,7 @@ pub fn run() {
                 WebviewUrl::App("settings.html".into()),
             )
             .title("Settings")
-            .inner_size(560.0, 700.0) // +44 px na vlastní titlebar strip
+            .inner_size(560.0, 684.0) // +28 px na vlastní titlebar strip
             .resizable(false)
             .visible(false)
             .decorations(true)

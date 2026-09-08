@@ -129,12 +129,19 @@ pub fn run() {
                 // mode nad bílým stripem tmavý pruh.
                 #[cfg(target_os = "macos")]
                 {
-                    use objc2_app_kit::{NSColor, NSWindow};
+                    use objc2_app_kit::{NSColor, NSWindow, NSWindowButton};
                     if let Ok(ptr) = win.ns_window() {
                         unsafe {
                             let ns_window = &*(ptr as *mut NSWindow);
                             let white = NSColor::whiteColor();
                             ns_window.setBackgroundColor(Some(&white));
+                            // Non-resizable okno → macOS zoom tlačítko šedí
+                            // (disabled). Radši ho schováme úplně.
+                            if let Some(zoom) =
+                                ns_window.standardWindowButton(NSWindowButton::ZoomButton)
+                            {
+                                zoom.setHidden(true);
+                            }
                         }
                     }
                 }

@@ -1,0 +1,10 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "pill",
+  "description": "Capability for the recording pill window (listens for recorder events)",
+  "windows": ["pill"],
+  "permissions": [
+    "core:default",
+    "core:event:default"
+  ]
+}

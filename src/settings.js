@@ -75,8 +75,10 @@ function scheduleSave() {
   saveTimer = setTimeout(async () => {
     try {
       await invoke("save_config", { config });
+      // Po uložení přeregistruje globální hotkey, aby změna platila okamžitě.
+      await invoke("apply_hotkey");
     } catch (err) {
-      console.error("save_config failed", err);
+      console.error("save_config/apply_hotkey failed", err);
     }
   }, 300);
 }

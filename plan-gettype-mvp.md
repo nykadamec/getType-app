@@ -63,6 +63,13 @@ macOS menu-bar aplikace pro diktaci: globální hotkey → nahrání mikrofonu �
 6. **UI wiring** — popover stavy (idle/recording/transcribing), mini pilulky dle návrhu
 7. **Polish** — ikona, audio cues, error toasty, build + ad-hoc signing
 
+## Fáze 8 — Historie (schváleno)
+- Sidebar: nová položka History; ukládá se co appka vložila do schránky (text + čas).
+- Seznam posledních ~50 přepisů (JSON lokálně), klik = kopie do schránky.
+- Mazání: křížek u položky + Clear all v hlavičce sekce.
+- Backend: `history.rs` (record při každé úspěšné transkripci v `stt.rs`), commandy list/copy/delete/clear.
+- DONE fix: `getCurrent()` → `getCurrentWindow()` (v1 vs v2 API).
+
 ## Verifikace
 - Build: `cargo tauri dev` / `cargo tauri build`
 - Manuální smoke test: hotkey → nahrání → transkripce → paste do TextEdit/Safari

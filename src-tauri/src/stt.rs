@@ -39,6 +39,8 @@ pub fn transcribe(app: AppHandle, path: PathBuf) {
                 // pojistka tady (dvojí fade rozbíjel generační počítadlo).
                 let chars = text.chars().count();
                 eprintln!("gettype: transcription-complete {{chars={chars}}}");
+                // Historie: synchronně před output::apply (rychlé, Mutex + malý JSON).
+                crate::history::record(&app, &text, &crate::settings::load().model);
                 crate::output::apply(&app, text.clone());
                 let _ = app.emit(
                     "transcription-complete",

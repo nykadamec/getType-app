@@ -1,6 +1,7 @@
 // gettype — menu bar dictation app (MVP skeleton)
 
 mod audio;
+mod history;
 mod hotkey;
 mod output;
 mod permissions;
@@ -176,6 +177,8 @@ pub fn run() {
 
             // Stav nahrávání — drží cpal Stream živý mezi start/stop.
             app.manage(Mutex::new(audio::Recorder::default()));
+            // Historie přepisů — načte history.json (chybějící/corrupt → prázdná).
+            app.manage(Mutex::new(history::History::load()));
 
             // Globální hotkey po vytvoření oken; konflikt (obsazená zkratka)
             // jen zalogujeme, aplikace nespadne.
@@ -218,7 +221,11 @@ pub fn run() {
             get_launch_at_login,
             apply_hotkey,
             permissions::get_mic_permission,
-            permissions::get_accessibility_permission
+            permissions::get_accessibility_permission,
+            history::list_history,
+            history::copy_history_entry,
+            history::delete_history_entry,
+            history::clear_history
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

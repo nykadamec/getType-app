@@ -446,7 +446,8 @@ function openPrivacy(url) {
 
   els.doneBtn.addEventListener("click", () => {
     try {
-      window.__TAURI__.window.getCurrent().hide();
+      // Tauri v2: getCurrentWindow (v1 getCurrent neexistuje → TypeError).
+      window.__TAURI__.window.getCurrentWindow().hide();
     } catch (err) {
       console.error("hide failed", err);
     }

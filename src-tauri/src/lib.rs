@@ -3,6 +3,7 @@
 mod audio;
 mod hotkey;
 mod output;
+mod permissions;
 mod pill;
 mod settings;
 mod stt;
@@ -215,7 +216,9 @@ pub fn run() {
             verify::verify_api_key,
             set_launch_at_login,
             get_launch_at_login,
-            apply_hotkey
+            apply_hotkey,
+            permissions::get_mic_permission,
+            permissions::get_accessibility_permission
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

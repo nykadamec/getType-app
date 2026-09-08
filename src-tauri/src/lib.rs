@@ -86,10 +86,13 @@ pub fn run() {
             // se táhne až k vršku — vlastní strip řeší settings.html/css.
             // API ověřeno proti tauri 2.11.5: TitleBarStyle je re-export
             // tauri_utils (crate::TitleBarStyle), hidden_title(bool) na
-            // WebviewWindowBuilder (macOS only). Transparent místo Overlay:
-            // toolbar je průhledný a ukazuje bílou z CSS — jeden zdroj
-            // pravdy, plynulý přechod bez šedého nádechu overlay vrstvy.
-            .title_bar_style(tauri::TitleBarStyle::Transparent)
+            // WebviewWindowBuilder (macOS only). Overlay (ne Transparent):
+            // jen Overlay dává fullsize_content_view(true), takže webview
+            // sahá až k vršku a semafory plavou nad naším stripem na jedné
+            // lince s titulkem. Transparent nechává toolbaru vlastní pruh
+            // (viz tauri-runtime-wry title_bar_style) — vznikla by dvojitá
+            // hlavička. Bílý NSWindow background níže řeší prosvítání.
+            .title_bar_style(tauri::TitleBarStyle::Overlay)
             .hidden_title(true)
             .build()
             .map(|win| {

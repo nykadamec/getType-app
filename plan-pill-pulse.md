@@ -23,5 +23,6 @@ Aktivní pilulka (stav recording) má lehký, minimální efekt pulzování — 
 - Uživatel: pulz skáče (0→100, skok na 0). Oprava: směr `alternate` (ping-pong 0→100→0), ať dýchá plynule.
 - Uživatel: pilulka při stop→transcribing problikne (zmizí/znovu najede). Oprava: `fadeIn` v `pill.js` nepřhrávat dissolve, když je pilulka už viditelná — jen vyměnit obsah.
 - Uživatel: trvalý `box-shadow` pryč — jen čistá bílá pilulka.
+- Uživatel: přidat bílé ohraničení + lehký bílý blur kolem pilulky (@designer).
 - Obě části patří k jednomu celkovému úkolu (viz `plan-escape-cancel.md`).
 - Write-scope oddělený: Escape-cancel vlastní `*.rs` + `pill.js` event, Pulse vlastní pouze `pill.css`.

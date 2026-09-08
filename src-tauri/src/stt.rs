@@ -37,6 +37,9 @@ pub fn transcribe(app: AppHandle, path: PathBuf, generation: u64) {
     tauri::async_runtime::spawn(async move {
         let result = run(&app, &path).await;
         crate::audio::clear_transcribing(generation);
+        // Transkripce doběhla → Escape zpět ostatním aplikacím, jen když
+        // mezitím nezačala novější akce (guard proti shazení jejího Escapu).
+        crate::hotkey::release_escape_if_idle(&app);
         if crate::audio::is_stale(generation) {
             eprintln!("gettype: transcription result discarded (cancelled)");
             return;

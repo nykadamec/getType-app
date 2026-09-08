@@ -51,13 +51,14 @@ pub fn plugin() -> TauriPlugin<Wry> {
         .build()
 }
 
-/// Přečte config.hotkey a (znovu) registruje globální zkratku + holý Escape
-/// pro cancel (ten parser už umí, ale apply dřív registroval vždy jen jednu
-/// zkratku). Konflikt zkratky vrací Err stringem (frontend ho jen zaloguje).
+/// Přečte config.hotkey a (znovu) registruje JEN uživatelskou globální
+/// zkratku. Holý Escape se tu už neregistruje — v idle stavu musí propadat
+/// do ostatních aplikací. Registruje ho dynamicky až `audio::start()` a
+/// odregistrovává `release_escape_if_idle()` po konci akce.
+/// Konflikt zkratky vrací Err stringem (frontend ho jen zaloguje).
 pub fn apply(app: &AppHandle) -> Result<(), String> {
     let config = settings::load();
     let shortcut = parse_hotkey(&config.hotkey)?;
-    let escape = Shortcut::new(None, Code::Escape);
     let shortcuts = app.global_shortcut();
     shortcuts
         .unregister_all()
@@ -65,14 +66,86 @@ pub fn apply(app: &AppHandle) -> Result<(), String> {
     shortcuts
         .register(shortcut)
         .map_err(|e| format!("hotkey \"{}\" registration failed: {e}", config.hotkey))?;
-    // Escape pro cancel — jen když jím už není samotná uživatelská zkratka
-    // (pak ho obslouží Escape větev handleru tak jako tak).
-    if escape != shortcut {
-        shortcuts
-            .register(escape)
-            .map_err(|e| format!("Escape cancel registration failed: {e}"))?;
+    // Vzácný overlap: změna zkratky během probíhající akce (`unregister_all`
+    // výše shodil i její Escape) → zaregistruj ho zpět pro cancel.
+    if audio::is_recording(app) || audio::is_transcribing() {
+        register_escape(app);
     }
     Ok(())
+}
+
+/// Holý Escape pro cancel — stejný parse jako dřív (`Code::Escape`, bez modů).
+pub fn escape_shortcut() -> Shortcut {
+    Shortcut::new(None, Code::Escape)
+}
+
+/// True, pokud je samotná uživatelská zkratka holý Escape (pak ho spravuje
+/// `apply()` a dynamická registrace/odregistrace ho nesmí shodit).
+fn is_escape_hotkey() -> bool {
+    match settings::load().hotkey.as_str() {
+        s => parse_hotkey(s).map(|s| s == escape_shortcut()).unwrap_or(false),
+    }
+}
+
+/// Zaregistruje globální Escape pro cancel probíhající akce. Volá se z
+/// `audio::start()` po úspěšném rozjetí nahrávání — tj. i z handleru
+/// globální zkratky. Synchronní `global_shortcut().register` z handleru
+/// deadlockne plugin (handler thread čeká na potvrzení z main threadu),
+/// proto práci jen naplánujeme mimo handler a hned vrátíme řízení.
+/// Best-effort: chyba (např. už registrováno) akci neruší, jen se zaloguje.
+pub fn register_escape(app: &AppHandle) {
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        do_register_escape(&app);
+    });
+}
+
+/// Odregistruje globální Escape, aby v idle stavu propadal do ostatních
+/// aplikací. Stejně jako `register_escape` nesmí volat
+/// `global_shortcut().unregister` synchronně z handleru — plánuje mimo.
+/// Best-effort (chyba se jen zaloguje). Umí cílený `unregister`.
+// Veřejné API pro případné přímé volání mimo handler (aktuálně vše teče
+// přes `release_escape_if_idle`).
+#[allow(dead_code)]
+pub fn unregister_escape(app: &AppHandle) {
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        do_unregister_escape(&app);
+    });
+}
+
+/// Odregistruje Escape, jen když neběží žádná novější akce (nahrávání ani
+/// transkripce). Chrání před závodem: pozdní konec staré akce nesmí shodit
+/// Escape právě rozjeté nové akce (`start()` ho registroval znovu).
+/// Idle-check běží až v naplánovaném closure (v době provedení), ne v době
+/// volání — jinak by závod mezi koncem staré a startem nové akce prošel.
+pub fn release_escape_if_idle(app: &AppHandle) {
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        if !audio::is_recording(&app) && !audio::is_transcribing() {
+            do_unregister_escape(&app);
+        }
+    });
+}
+
+/// Synchronní jádro registrace — běží až mimo handler (ve spawned tasku).
+fn do_register_escape(app: &AppHandle) {
+    if is_escape_hotkey() {
+        return; // uživatelská zkratka už Escape obsluhuje
+    }
+    if let Err(e) = app.global_shortcut().register(escape_shortcut()) {
+        eprintln!("gettype: Escape register failed (cancel may not work): {e}");
+    }
+}
+
+/// Synchronní jádro odregistrace — běží až mimo handler (ve spawned tasku).
+fn do_unregister_escape(app: &AppHandle) {
+    if is_escape_hotkey() {
+        return; // patří uživatelské zkratce — nesahej na ni
+    }
+    if let Err(e) = app.global_shortcut().unregister(escape_shortcut()) {
+        eprintln!("gettype: Escape unregister failed (ignored): {e}");
+    }
 }
 
 /// Parse formátu ukládaného ze settings.js: "Option+Space", "Command+Shift+K".

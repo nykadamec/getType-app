@@ -65,6 +65,11 @@ pub fn is_active(app: &AppHandle) -> bool {
     is_recording(app) || TRANSCRIBING_GEN.load(Ordering::SeqCst) != 0
 }
 
+/// Probíhá transkripce (TRANSCRIBING_GEN != 0).
+pub fn is_transcribing() -> bool {
+    TRANSCRIBING_GEN.load(Ordering::SeqCst) != 0
+}
+
 /// Transkripce generace `generation` právě odstartovala.
 pub fn set_transcribing(generation: u64) {
     TRANSCRIBING_GEN.store(generation, Ordering::SeqCst);
@@ -177,6 +182,10 @@ pub fn start(app: &AppHandle) {
         ACTION_GEN.fetch_add(1, Ordering::SeqCst);
     }
 
+    // Akce běží → zachyť globální Escape pro cancel. V idle stavu zůstává
+    // Escape odregistrovaný a propadá do ostatních aplikací.
+    crate::hotkey::register_escape(app);
+
     // Pilulka se jen ukáže — bez focusu, ať nevytrhne uživatele z aplikace.
     // show() zároveň zneplatní čekající fade-hide z předchozího nahrávání.
     crate::pill::show(app);
@@ -212,6 +221,9 @@ pub fn stop(app: &AppHandle) {
 
     if duration_ms < MIN_DURATION_MS {
         emit_error(app, "Recording too short");
+        // Akce končí bez transkripce → Escape zpět ostatním aplikacím
+        // (jen když mezitím nezačala nová akce).
+        crate::hotkey::release_escape_if_idle(app);
         return;
     }
 
@@ -230,6 +242,7 @@ pub fn stop(app: &AppHandle) {
         Ok(processed) => processed,
         Err(e) => {
             emit_error(app, e);
+            crate::hotkey::release_escape_if_idle(app);
             return;
         }
     };
@@ -238,6 +251,7 @@ pub fn stop(app: &AppHandle) {
         Ok(path) => path,
         Err(e) => {
             emit_error(app, format!("WAV write failed: {e}"));
+            crate::hotkey::release_escape_if_idle(app);
             return;
         }
     };
@@ -305,6 +319,9 @@ pub fn cancel(app: &AppHandle) {
     eprintln!("gettype: action-cancelled");
     crate::pill::fade_out(app);
     let _ = app.emit("recording-cancelled", json!({}));
+    // Akce skončila → Escape zpět ostatním aplikacím (jen když mezitím
+    // nezačala nová akce).
+    crate::hotkey::release_escape_if_idle(app);
 }
 
 /// Postaví input stream pro konkrétní sample typ; callback zapisuje do bufferu.

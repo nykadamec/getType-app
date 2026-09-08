@@ -1,6 +1,6 @@
-# gettype
+# getType
 
-A lightweight dictation app for macOS. Press a global hotkey, speak — gettype transcribes your voice to text and pastes it where your cursor is.
+A lightweight dictation app for macOS. Press a global hotkey, speak — getType transcribes your voice to text and pastes it where your cursor is.
 
 ## How it works
 

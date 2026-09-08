@@ -176,6 +176,10 @@ pub fn stop(app: &AppHandle) {
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
         .clone();
+    eprintln!(
+        "gettype: recording-stopped {{duration_ms={duration_ms}, samples={}}}",
+        raw.len()
+    );
     let resampled = resample_linear(&raw, sample_rate, TARGET_SAMPLE_RATE);
 
     let path = match write_wav(&resampled) {
@@ -233,7 +237,9 @@ where
                     emit_error(&handle, "Microphone is not available");
                     stop(&handle);
                 }
-                _ => eprintln!("gettype audio stream error: {err}"),
+                // Underrun/overrun je běžný šum CoreAudio — jen warning,
+                // nahrávání tím nekončí a stav se nemění.
+                _ => eprintln!("gettype: audio stream warning (ignored, recording continues): {err}"),
             }
         },
         None, // bez timeoutu — čekáme, až CoreAudio postaví unit

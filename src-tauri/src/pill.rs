@@ -31,8 +31,14 @@ pub fn fade_out(app: &AppHandle) {
         if FADE_GEN.load(Ordering::SeqCst) != generation {
             return;
         }
-        if let Some(pill) = handle.get_webview_window("pill") {
-            let _ = pill.hide();
+        // window.hide() patří na main thread — sjednoceno s paste cestou.
+        let inner = handle.clone();
+        if let Err(e) = handle.run_on_main_thread(move || {
+            if let Some(pill) = inner.get_webview_window("pill") {
+                let _ = pill.hide();
+            }
+        }) {
+            eprintln!("gettype: run_on_main_thread failed (pill hide): {e}");
         }
     });
 }

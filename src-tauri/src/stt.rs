@@ -35,12 +35,15 @@ pub fn transcribe(app: AppHandle, path: PathBuf) {
             Ok(text) => {
                 // output::apply skryje pilulku jako svůj první krok (ať paste
                 // nepřichází, dokud je okno viditelné), pak teprve event.
+                // Jediný owner skrývání je output::apply — žádná duplicitní
+                // pojistka tady (dvojí fade rozbíjel generační počítadlo).
+                let chars = text.chars().count();
+                eprintln!("gettype: transcription-complete {{chars={chars}}}");
                 crate::output::apply(&app, text.clone());
                 let _ = app.emit(
                     "transcription-complete",
-                    json!({ "chars": text.chars().count() }),
+                    json!({ "chars": chars }),
                 );
-                fade_out_pill(&app); // idempotentní pojistka
             }
             Err(message) => {
                 eprintln!("gettype: transcription failed: {message}");
@@ -60,6 +63,7 @@ async fn run(app: &AppHandle, path: &PathBuf) -> Result<String, String> {
     };
 
     // 2. Pilulka přechází do stavu „překládám“.
+    eprintln!("gettype: transcribing-started");
     let _ = app.emit("transcribing-started", json!({}));
 
     // 3. request

@@ -170,19 +170,24 @@ pub fn run() {
                 }
                 None => ((1280.0 / 2.0) - 64.0, 56.0), // fallback bez monitoru
             };
-            WebviewWindowBuilder::new(app, "pill", WebviewUrl::App("pill.html".into()))
-                .title("Recording")
-                .inner_size(128.0, 40.0)
-                .position(pill_x, pill_y)
-                .decorations(false)
-                .transparent(true) // vyžaduje macOSPrivateApi v tauri.conf.json
-                .always_on_top(true)
-                .skip_taskbar(true)
-                .visible(false)
-                .resizable(false)
-                .focused(false) // pilulka nesmí krást focus
-                .shadow(false) // stín řeší CSS pilulky
-                .build()?;
+            let pill_builder =
+                WebviewWindowBuilder::new(app, "pill", WebviewUrl::App("pill.html".into()))
+                    .title("Recording")
+                    .inner_size(128.0, 40.0)
+                    .position(pill_x, pill_y)
+                    .decorations(false)
+                    .transparent(true) // vyžaduje macOSPrivateApi v tauri.conf.json
+                    .always_on_top(true)
+                    .skip_taskbar(true)
+                    .visible(false)
+                    .resizable(false)
+                    .focused(false) // pilulka nesmí krást focus
+                    .shadow(false); // stín řeší CSS pilulky
+            // Dev: obejití webview cache (macOS = nonPersistent DataStore),
+            // aby se pill.html načítalo vždy čerstvé. Release beze změny.
+            #[cfg(debug_assertions)]
+            let pill_builder = pill_builder.incognito(true);
+            pill_builder.build()?;
 
             // Stav nahrávání — drží cpal Stream živý mezi start/stop.
             app.manage(Mutex::new(audio::Recorder::default()));
@@ -200,6 +205,9 @@ pub fn run() {
         .on_menu_event(|app, event| match event.id.as_ref() {
             "settings" => {
                 if let Some(win) = app.get_webview_window("settings") {
+                    // Dock ikona jen když je Settings viditelné (plán-dock-settings).
+                    #[cfg(target_os = "macos")]
+                    let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
                     let _ = win.show();
                     let _ = win.set_focus();
                 }
@@ -218,6 +226,11 @@ pub fn run() {
                 if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                     api.prevent_close();
                     let _ = window.hide();
+                    // Zpět do menu-bar-only režimu (plán-dock-settings).
+                    #[cfg(target_os = "macos")]
+                    let _ = window
+                        .app_handle()
+                        .set_activation_policy(tauri::ActivationPolicy::Accessory);
                 }
             }
         })

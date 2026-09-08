@@ -15,9 +15,20 @@ use crate::{audio, settings};
 /// Plugin s globálním handlerem. Registruje se před setupem.
 pub fn plugin() -> TauriPlugin<Wry> {
     ShortcutBuilder::new()
-        .with_handler(|app, _shortcut, event| {
-            let mode = settings::load().mode;
+        .with_handler(|app, shortcut, event| {
             let pressed = event.state == ShortcutState::Pressed;
+            // Holý Escape = cancel celé probíhající akce — nikdy start/stop.
+            // `audio::cancel` je mimo akci no-op, takže tady není potřeba
+            // žádný další gating. Release Escapu ignorujeme.
+            if shortcut.key == Code::Escape && shortcut.mods.is_empty() {
+                // Escape reaguje jen když probíhá akce (recording/transcribing);
+                // mimo ni nic nedělá. Samotný cancel je idempotentní no-op.
+                if pressed && audio::is_active(app) {
+                    audio::cancel(app);
+                }
+                return;
+            }
+            let mode = settings::load().mode;
             match mode.as_str() {
                 // toggle: reagujeme jen na stisk — vnitřní stav rozhodne start/stop
                 "toggle" => {
@@ -30,6 +41,8 @@ pub fn plugin() -> TauriPlugin<Wry> {
                     if pressed {
                         audio::start(app);
                     } else if audio::is_recording(app) {
+                        // Guard i pro PTT cancel: po Escapu je stav Idle,
+                        // takže doběhnuvší Released nic nespustí.
                         audio::stop(app);
                     }
                 }
@@ -38,18 +51,28 @@ pub fn plugin() -> TauriPlugin<Wry> {
         .build()
 }
 
-/// Přečte config.hotkey a (znovu) registruje globální zkratku.
-/// Konflikt zkratky vrací Err stringem (frontend ho jen zaloguje).
+/// Přečte config.hotkey a (znovu) registruje globální zkratku + holý Escape
+/// pro cancel (ten parser už umí, ale apply dřív registroval vždy jen jednu
+/// zkratku). Konflikt zkratky vrací Err stringem (frontend ho jen zaloguje).
 pub fn apply(app: &AppHandle) -> Result<(), String> {
     let config = settings::load();
     let shortcut = parse_hotkey(&config.hotkey)?;
+    let escape = Shortcut::new(None, Code::Escape);
     let shortcuts = app.global_shortcut();
     shortcuts
         .unregister_all()
         .map_err(|e| format!("unregister_all failed: {e}"))?;
     shortcuts
         .register(shortcut)
-        .map_err(|e| format!("hotkey \"{}\" registration failed: {e}", config.hotkey))
+        .map_err(|e| format!("hotkey \"{}\" registration failed: {e}", config.hotkey))?;
+    // Escape pro cancel — jen když jím už není samotná uživatelská zkratka
+    // (pak ho obslouží Escape větev handleru tak jako tak).
+    if escape != shortcut {
+        shortcuts
+            .register(escape)
+            .map_err(|e| format!("Escape cancel registration failed: {e}"))?;
+    }
+    Ok(())
 }
 
 /// Parse formátu ukládaného ze settings.js: "Option+Space", "Command+Shift+K".

@@ -29,9 +29,19 @@ fn emit_error(app: &AppHandle, message: impl Into<String>) {
 }
 
 /// Spustí transkripci v async tasku (UI thread nikdy nezastaví).
-pub fn transcribe(app: AppHandle, path: PathBuf) {
+/// `generation` patří k akci z `audio::stop` — pokud mezitím přišel cancel
+/// (nebo novější akce), výsledek se zahodí: žádný `history::record`, žádný
+/// `output::apply`, jen návrat (pilulku už skryl cancel).
+pub fn transcribe(app: AppHandle, path: PathBuf, generation: u64) {
+    crate::audio::set_transcribing(generation);
     tauri::async_runtime::spawn(async move {
-        match run(&app, &path).await {
+        let result = run(&app, &path).await;
+        crate::audio::clear_transcribing(generation);
+        if crate::audio::is_stale(generation) {
+            eprintln!("gettype: transcription result discarded (cancelled)");
+            return;
+        }
+        match result {
             Ok(text) => {
                 // output::apply skryje pilulku jako svůj první krok (ať paste
                 // nepřichází, dokud je okno viditelné), pak teprve event.
@@ -41,7 +51,7 @@ pub fn transcribe(app: AppHandle, path: PathBuf) {
                 eprintln!("gettype: transcription-complete {{chars={chars}}}");
                 // Historie: synchronně před output::apply (rychlé, Mutex + malý JSON).
                 crate::history::record(&app, &text, &crate::settings::load().model);
-                crate::output::apply(&app, text.clone());
+                crate::output::apply(&app, text.clone(), generation);
                 let _ = app.emit(
                     "transcription-complete",
                     json!({ "chars": chars }),

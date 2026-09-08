@@ -28,7 +28,6 @@ body {
   background: #ffffff;
   border: 1px solid #e6e6e6;
   border-radius: 10px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
   display: flex;
   align-items: center;
   gap: 8px;
@@ -36,6 +35,96 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
   -webkit-user-select: none;
   user-select: none;
+  position: relative;
+  isolation: isolate;
+  transform-origin: 50% 50%;
+  /* Viditelné dýchání v recording stavu: celý bílý objekt pruží.
+     Rozsah opacity 1 → 0.9 + scale 1 → 0.96 v krátké 1.8s smyčce —
+     patrné na první pohled, pořád elegantní, žádný glow. */
+  animation: pill-breathe 1.8s ease-in-out infinite alternate;
+}
+
+/* ---------- recording pulse: dýchá celý bílý objekt ---------- */
+
+/* Viditelné dýchání celého objektu: opacity 1 → 0.9, scale 1 → 0.96.
+   Nepravidelný průběh (hluboký nádech ve 2. třetině), krátká 1.8s smyčka —
+   pulz je jasný, ale transform zůstává malý, takže 128×40 layout neclipuje. */
+@keyframes pill-breathe {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  30% {
+    opacity: 0.94;
+    transform: scale(0.975);
+  }
+  55% {
+    opacity: 0.9;
+    transform: scale(0.96);
+  }
+  78% {
+    opacity: 0.95;
+    transform: scale(0.977);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Vodní halo: scaleX a scaleY se nikdy nehýbou spolu (jednou širší + plošší,
+   jindy užší + vyšší) + jemný morph radiusu a nepravidelná opacity.
+   Kratší smyčka pilulky (1.8 s) × delší halo (4.6 s) dělají pomalý
+   interferenční rytmus — působí organicky, ne jako metronom. */
+@keyframes pill-halo-fluid {
+  0% {
+    opacity: 0.65;
+    transform: scale(1, 1);
+    border-radius: 8px;
+  }
+  28% {
+    opacity: 0.38;
+    transform: scale(1.03, 0.92);
+    border-radius: 9px 7px 9px 7px / 7px 9px 7px 9px;
+  }
+  55% {
+    opacity: 0.75;
+    transform: scale(0.97, 1.03);
+    border-radius: 7px 9px 7px 9px / 9px 7px 9px 7px;
+  }
+  79% {
+    opacity: 0.45;
+    transform: scale(1.02, 0.95);
+    border-radius: 8px 8px 7px 9px / 9px 7px 8px 8px;
+  }
+  100% {
+    opacity: 0.65;
+    transform: scale(1, 1);
+    border-radius: 8px;
+  }
+}
+
+/* Transcribing nedýchá — stav už nese zšednutí + tečky. */
+body.transcribing #pill {
+  animation: none;
+}
+
+body.transcribing #pill::before {
+  animation: none;
+  opacity: 0;
+}
+
+/* Respekt k reduced-motion: statická pilulka, halo, wave i tečky stojí. */
+@media (prefers-reduced-motion: reduce) {
+  #pill,
+  #pill::before,
+  .bar,
+  #dots .dot {
+    animation: none;
+  }
+  #pill::before {
+    opacity: 0;
+  }
 }
 
 #wave {

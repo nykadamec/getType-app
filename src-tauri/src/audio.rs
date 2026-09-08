@@ -8,6 +8,7 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{FromSample, SampleFormat, SizedSample};
 use serde_json::json;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Instant;
 use tauri::{AppHandle, Emitter, Manager};
@@ -39,6 +40,45 @@ pub struct Recorder {
     /// Vzorky sdílené s audio callbackem. Callback sahá jen sem, nikdy na
     /// Recorder — audio thread se nemůže vmíchávat do hlavního zámku.
     samples: Arc<Mutex<Vec<i16>>>,
+}
+
+/// Generace akce (nahrávání → transkripce → output patří k sobě).
+/// `start()` i `cancel()` ji zvyšují; doběhlá transkripce/output s jinou
+/// generací svůj výsledek zahodí (Escape-cancel). 0 = žádná akce.
+static ACTION_GEN: AtomicU64 = AtomicU64::new(0);
+/// Generace právě běžící transkripce, 0 = žádná. Slouží i jako „probíhá
+/// akce“ pro gating Escape (mimo akci Escape nic nedělá).
+static TRANSCRIBING_GEN: AtomicU64 = AtomicU64::new(0);
+
+/// Aktuální generace akce.
+pub fn current_generation() -> u64 {
+    ACTION_GEN.load(Ordering::SeqCst)
+}
+
+/// True, pokud generace už byla zneplatněna (cancel / novější akce).
+pub fn is_stale(generation: u64) -> bool {
+    ACTION_GEN.load(Ordering::SeqCst) != generation
+}
+
+/// Probíhá nahrávání nebo transkripce (Escape má smysl jen tehdy).
+pub fn is_active(app: &AppHandle) -> bool {
+    is_recording(app) || TRANSCRIBING_GEN.load(Ordering::SeqCst) != 0
+}
+
+/// Transkripce generace `generation` právě odstartovala.
+pub fn set_transcribing(generation: u64) {
+    TRANSCRIBING_GEN.store(generation, Ordering::SeqCst);
+}
+
+/// Transkripce generace `generation` doběhla — vlajku shodí jen vlastník
+/// (compare_exchange), aby pozdní konec staré akce neshodil novější.
+pub fn clear_transcribing(generation: u64) {
+    let _ = TRANSCRIBING_GEN.compare_exchange(
+        generation,
+        0,
+        Ordering::SeqCst,
+        Ordering::SeqCst,
+    );
 }
 
 /// Lock, který přežije poison (audio callback nesmí shodit UI).
@@ -132,6 +172,9 @@ pub fn start(app: &AppHandle) {
             started_at: Instant::now(),
             sample_rate,
         };
+        // Nová akce — zneplatní případný doběh předchozí transkripce/outputu
+        // (uživatel stihl začít znovu dřív, než stará doběhla).
+        ACTION_GEN.fetch_add(1, Ordering::SeqCst);
     }
 
     // Pilulka se jen ukáže — bez focusu, ať nevytrhne uživatele z aplikace.
@@ -200,6 +243,7 @@ pub fn stop(app: &AppHandle) {
     };
 
     lock_recorder(app).last_recording = Some(path.clone());
+    let generation = current_generation();
     let _ = app.emit(
         "recording-stopped",
         json!({
@@ -210,7 +254,57 @@ pub fn stop(app: &AppHandle) {
 
     // Pilulka zůstává viditelná (timer už stopnutý) a přechází do stavu
     // „překládám“ — skrývá ji až stt/output v koncovém stavu (úspěch i chyba).
-    crate::stt::transcribe(app.clone(), path);
+    crate::stt::transcribe(app.clone(), path, generation);
+}
+
+/// Zruší celou probíhající akci (Escape): drop streamu + zahození bufferu
+/// bez WAV write, stav → Idle, zneplatnění doběhlé transkripce/outputu
+/// (generační guard), best-effort smazání WAV z transcribing fáze, okamžitý
+/// fade-out pilulky + event `recording-cancelled`.
+///
+/// Mimo probíhající akci (Idle, nic se nepřepisuje) je no-op — žádný event,
+/// žádný fade. Krátká nahrávka (<300 ms) zrušená Escapem jde touto cestou,
+/// nikdy error path `stop()`.
+///
+/// PTT guard: stav je po cancelu Idle, takže doběhnuvší `Released` původní
+/// zkratky v hotkey handleru přes `is_recording()` nic nespustí.
+pub fn cancel(app: &AppHandle) {
+    // Stream vyjmeme pod zámkem, dropneme až po odemčení (stejně jako stop).
+    let (stream, was_recording) = {
+        let mut recorder = lock_recorder(app);
+        match recorder.state {
+            RecorderState::Recording { .. } => {
+                recorder.state = RecorderState::Idle;
+                let stream = recorder.stream.take();
+                // Buffer zahodit — žádný WAV z něj nikdy nevznikne.
+                recorder.samples = Arc::new(Mutex::new(Vec::new()));
+                (stream, true)
+            }
+            RecorderState::Idle => (None, false),
+        }
+    };
+    drop(stream);
+
+    // Transcribing vlajku shodíme hned (doběhlý task si svůj konec pohlídá
+    // přes clear_transcribing + is_stale a výsledek zahodí).
+    let was_transcribing = TRANSCRIBING_GEN.swap(0, Ordering::SeqCst) != 0;
+    if !was_recording && !was_transcribing {
+        return; // idle — Escape nic nedělá
+    }
+    // Zneplatní doběhlou transkripci i output (generační guard ve stt/output).
+    ACTION_GEN.fetch_add(1, Ordering::SeqCst);
+
+    // WAV z transcribing fáze best-effort smazat (při cancelu během
+    // nahrávání žádný soubor neexistuje — write přichází až ve stopu).
+    if was_transcribing {
+        if let Some(path) = lock_recorder(app).last_recording.take() {
+            let _ = std::fs::remove_file(&path);
+        }
+    }
+
+    eprintln!("gettype: action-cancelled");
+    crate::pill::fade_out(app);
+    let _ = app.emit("recording-cancelled", json!({}));
 }
 
 /// Postaví input stream pro konkrétní sample typ; callback zapisuje do bufferu.

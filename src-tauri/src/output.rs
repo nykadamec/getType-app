@@ -29,7 +29,15 @@ const RESTORE_DELAY: Duration = Duration::from_millis(250);
 /// cílové appky (CSS ztrácí opacity, paste delay 80 ms zůstává); reálné
 /// window.hide() přichází až po fade animaci z pill::fade_out.
 /// Jediný owner skrývání pilulky — stt.rs po apply žádný další fade nevolá.
-pub fn apply(app: &AppHandle, text: String) {
+///
+/// Po cancelu (`generation` je stale) nic nezapisuje: ani clipboard, ani ⌘V
+/// (enigo). Kontroluje se na vstupu i těsně před pastem na main threadu
+/// (cancel mohl přijít během PASTE_DELAY).
+pub fn apply(app: &AppHandle, text: String, generation: u64) {
+    if crate::audio::is_stale(generation) {
+        eprintln!("gettype: output skipped (cancelled)");
+        return;
+    }
     crate::pill::fade_out(app);
 
     let config = settings::load();
@@ -40,6 +48,10 @@ pub fn apply(app: &AppHandle, text: String) {
         if config.copy_clipboard {
             let handle = app.clone();
             if let Err(e) = handle.run_on_main_thread(move || {
+                if crate::audio::is_stale(generation) {
+                    eprintln!("gettype: clipboard set skipped (cancelled)");
+                    return;
+                }
                 match Clipboard::new() {
                     Ok(mut clipboard) => match clipboard.set_text(&text) {
                         Ok(()) => eprintln!("gettype: clipboard set ok (copy-only)"),
@@ -62,6 +74,10 @@ pub fn apply(app: &AppHandle, text: String) {
     tauri::async_runtime::spawn(async move {
         // Async sleep — čekání blokuje jen tento task, ne executor.
         tokio::time::sleep(PASTE_DELAY).await;
+        if crate::audio::is_stale(generation) {
+            eprintln!("gettype: paste skipped (cancelled)");
+            return;
+        }
         if let Err(e) = handle.run_on_main_thread(move || {
             eprintln!("gettype: paste start");
             let mut clipboard = match Clipboard::new() {

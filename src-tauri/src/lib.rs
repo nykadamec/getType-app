@@ -69,6 +69,162 @@ fn get_launch_at_login(app: tauri::AppHandle) -> Result<bool, String> {
     app.autolaunch().is_enabled().map_err(|e| e.to_string())
 }
 
+/// Ukaže okno Settings (menu-bar-only → Dock ikona, viz plán-dock-settings).
+/// Sdílí logiku tray menu handleru níže — volá i ozubené kolo v popoveru.
+fn show_settings_window(app: &tauri::AppHandle) {
+    if let Some(win) = app.get_webview_window("settings") {
+        // Dock ikona jen když je Settings viditelné (plán-dock-settings).
+        #[cfg(target_os = "macos")]
+        let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
+        let _ = win.show();
+        let _ = win.set_focus();
+    }
+}
+
+/// Ozubené kolo v tray popoveru → Settings. Popover se zavře,
+/// Settings přebírá popředí.
+#[tauri::command]
+fn open_settings(app: tauri::AppHandle) -> Result<(), String> {
+    crate::log::info("tray", "open_settings called");
+    show_settings_window(&app);
+    if let Some(pop) = app.get_webview_window("popover") {
+        match pop.hide() {
+            Ok(()) => crate::log::info("tray", "open_settings popover hide ok=true"),
+            Err(e) => crate::log::warn("tray", format!("open_settings popover hide ok=false err=\"{e}\"")),
+        }
+    } else {
+        crate::log::info("tray", "open_settings popover missing=false");
+    }
+    Ok(())
+}
+
+/// Skryje tray popover (Escape ve frontendu, rezerva k blur handleru níže).
+#[tauri::command]
+fn hide_popover(app: tauri::AppHandle) -> Result<(), String> {
+    crate::log::info("tray", "hide_popover called");
+    if let Some(pop) = app.get_webview_window("popover") {
+        match pop.hide() {
+            Ok(()) => crate::log::info("tray", "hide_popover hide ok=true"),
+            Err(e) => crate::log::warn("tray", format!("hide_popover hide ok=false err=\"{e}\"")),
+        }
+    } else {
+        crate::log::info("tray", "hide_popover popover missing=false");
+    }
+    Ok(())
+}
+
+/// Šířka popover okna — musí sedět s `inner_size` v setup() a CSS
+/// (karta 300 + 18 px padding po stranách).
+const POPOVER_W: f64 = 336.0;
+
+/// Přepínač popoveru: viditelný → skrýt, skrytý → ukotvit pod tray
+/// ikonu a ukázat + focus (bez focusu by blur-zavírání nefungovalo).
+fn toggle_popover(app: &tauri::AppHandle, rect: Option<tauri::Rect>) {
+    crate::log::info("tray", format!("toggle called rect={rect:?}"));
+    let Some(win) = app.get_webview_window("popover") else {
+        crate::log::warn("tray", "toggle popover missing=false");
+        return;
+    };
+    let visible = win.is_visible().unwrap_or(false);
+    crate::log::info("tray", format!("toggle visible={visible}"));
+    if visible {
+        crate::log::info("tray", "toggle decision=hide reason=visible");
+        match win.hide() {
+            Ok(()) => crate::log::info("tray", "toggle hide ok=true"),
+            Err(e) => crate::log::warn("tray", format!("toggle hide ok=false err=\"{e}\"")),
+        }
+        return;
+    }
+    crate::log::info("tray", "toggle decision=show reason=hidden");
+    position_popover(app, &win, rect);
+    match win.show() {
+        Ok(()) => crate::log::info("tray", "toggle show ok=true"),
+        Err(e) => crate::log::warn("tray", format!("toggle show ok=false err=\"{e}\"")),
+    }
+    match win.set_focus() {
+        Ok(()) => crate::log::info("tray", "toggle focus ok=true"),
+        Err(e) => crate::log::warn("tray", format!("toggle focus ok=false err=\"{e}\"")),
+    }
+}
+
+/// Ukotvení popoveru POD tray ikonu, vodorovně centrované na její střed.
+///
+/// Tauri 2.11 `TrayIconEvent::Click` nese `rect` = pozici a velikost tray
+/// ikony ve FYZICKÝCH px (tauri::tray::TrayIconEvent) — přesnější než odhad
+/// z rohu obrazovky. Když je rect nulový (platforma ho nedodá), padáme
+/// zpět na pravý horní roh primárního monitoru pod menu bar.
+/// Fyzické px dělíme scale factorem monitoru → logické body pro set_position.
+fn position_popover(app: &tauri::AppHandle, win: &tauri::WebviewWindow, rect: Option<tauri::Rect>) {
+    const GAP: f64 = 6.0; // mezera mezi menu barem / ikonou a kartou
+    const EDGE: f64 = 8.0; // min. odstup karty od stran obrazovky
+    crate::log::info("tray", format!("position rect={rect:?}"));
+
+    let (mon_x, mon_y, mon_w) = match app.primary_monitor().ok().flatten() {
+        Some(monitor) => {
+            let scale = monitor.scale_factor();
+            let pos = monitor.position();
+            let size = monitor.size();
+            (
+                pos.x as f64 / scale,
+                pos.y as f64 / scale,
+                size.width as f64 / scale,
+            )
+        }
+        None => (0.0, 0.0, 1440.0), // fallback bez monitoru
+    };
+
+    let scale = app
+        .primary_monitor()
+        .ok()
+        .flatten()
+        .map(|m| m.scale_factor())
+        .unwrap_or(2.0);
+
+    // 1) vodorovně na střed ikony (nebo roh monitoru), 2) clamp na obrazovku.
+    // tauri::Rect nese dpi enumy Position/Size → nejdřív do fyzických px,
+    // pak dělíme scale factorem na logické body.
+    let (mut x, y) = match rect {
+        Some(r) => {
+            let pos: tauri::PhysicalPosition<f64> = r.position.to_physical(scale);
+            let size: tauri::PhysicalSize<f64> = r.size.to_physical(scale);
+            crate::log::info(
+                "tray",
+                format!(
+                    "position icon x={:.1} y={:.1} w={:.1} h={:.1} scale={scale}",
+                    pos.x, pos.y, size.width, size.height
+                ),
+            );
+            if size.width > 0.0 {
+                let center = (pos.x + size.width / 2.0) / scale;
+                let bottom = (pos.y + size.height) / scale;
+                let (px, py) = (center - POPOVER_W / 2.0, bottom + GAP);
+                crate::log::info("tray", format!("position anchor center={center:.1} bottom={bottom:.1} x={px:.1} y={py:.1}"));
+                (px, py)
+            } else {
+                crate::log::warn("tray", "position rect zero fallback=corner");
+                (mon_x + mon_w - POPOVER_W - EDGE, mon_y + 30.0)
+            }
+        }
+        None => {
+            crate::log::warn("tray", "position rect none fallback=corner");
+            (mon_x + mon_w - POPOVER_W - EDGE, mon_y + 30.0)
+        }
+    };
+    let lo = mon_x + EDGE;
+    let hi = (mon_x + mon_w - POPOVER_W - EDGE).max(mon_x + EDGE);
+    let x_raw = x;
+    x = x.clamp(lo, hi);
+
+    crate::log::info(
+        "tray",
+        format!("position result x={x:.1} y={y:.1} raw_x={x_raw:.1} clamp=[{lo:.1},{hi:.1}] mon_x={mon_x:.1} mon_w={mon_w:.1}"),
+    );
+    match win.set_position(tauri::Position::Logical(tauri::LogicalPosition { x, y })) {
+        Ok(()) => crate::log::info("tray", format!("position set ok=true x={x:.1} y={y:.1}")),
+        Err(e) => crate::log::warn("tray", format!("position set ok=false err=\"{e}\"")),
+    }
+}
+
 /// Konec onboardingu: uloží aktuální config (vznikne config.json =
 /// značka hotova), skryje okno `onboarding` a vrátí menu-bar-only režim.
 /// Stejný vzor jako hide handler Settings níže.
@@ -113,12 +269,58 @@ pub fn run() {
             let tray_icon =
                 tauri::image::Image::from_bytes(include_bytes!("../icons/tray-icon.png"))?;
 
+            crate::log::info(
+                "tray",
+                "register mode=popover show_menu_on_left_click=false menu=settings,quit",
+            );
             TrayIconBuilder::with_id("main-tray")
                 .icon(tray_icon)
                 .icon_as_template(true)
                 .tooltip("gettype")
                 .menu(&menu)
-                .show_menu_on_left_click(true)
+                // Levý klik = tray popover (viz on_tray_icon_event níže),
+                // pravý klik necháváme nativnímu menu (Settings…/Quit) —
+                // macOS s připojeným menu ukáže menu samo.
+                .show_menu_on_left_click(false)
+                .on_tray_icon_event(|tray, event| {
+                    use tauri::tray::{MouseButton, MouseButtonState, TrayIconEvent};
+                    // Toggle až na puštění tlačítka (Up), ne na stisk —
+                    // jinak by Down + Up překlopily popover dvakrát.
+                    if let TrayIconEvent::Click {
+                        button,
+                        button_state,
+                        rect,
+                        ..
+                    } = event
+                    {
+                        let scale = tray
+                            .app_handle()
+                            .primary_monitor()
+                            .ok()
+                            .flatten()
+                            .map(|m| m.scale_factor())
+                            .unwrap_or(2.0);
+                        let pos: tauri::PhysicalPosition<f64> = rect.position.to_physical(scale);
+                        let size: tauri::PhysicalSize<f64> = rect.size.to_physical(scale);
+                        crate::log::info(
+                            "tray",
+                            format!(
+                                "click button={button:?} state={button_state:?} x={:.1} y={:.1} w={:.1} h={:.1}",
+                                pos.x, pos.y, size.width, size.height
+                            ),
+                        );
+                        if size.width <= 0.0 {
+                            crate::log::warn("tray", "click rect zero fallback=corner");
+                        }
+                        if button == MouseButton::Left && button_state == MouseButtonState::Up {
+                            toggle_popover(tray.app_handle(), Some(rect));
+                        } else {
+                            crate::log::info("tray", "click ignored reason=not-left-up");
+                        }
+                    } else {
+                        crate::log::info("tray", format!("event ignored kind={event:?}"));
+                    }
+                })
                 .build(app)?;
 
             // Hidden settings window — revealed from the tray menu.
@@ -206,6 +408,29 @@ pub fn run() {
             let pill_builder = pill_builder.incognito(true);
             pill_builder.build()?;
 
+            // Tray popover (návrh 01 Popover — Idle, rám ncumZ v gettype.pen):
+            // 336×308, bez dekorací, průhledný (stín kreslí CSS karty),
+            // always-on-top, skrytý. Focusable schválně — kliknutí mimo
+            // (blur) popover zavírá, viz on_window_event níže. Pozice se
+            // dopočítá při každém otevření z rect tray ikony.
+            let popover_builder =
+                WebviewWindowBuilder::new(app, "popover", WebviewUrl::App("popover.html".into()))
+                    .title("gettype")
+                    .inner_size(POPOVER_W, 308.0)
+                    .decorations(false)
+                    .transparent(true) // vyžaduje macOSPrivateApi v tauri.conf.json
+                    .always_on_top(true)
+                    .skip_taskbar(true)
+                    .visible(false)
+                    .resizable(false)
+                    .focused(true)
+                    .shadow(false); // stín řeší CSS karty
+            // Dev: obejití webview cache (macOS = nonPersistent DataStore),
+            // aby se popover.html načítalo vždy čerstvé. Release beze změny.
+            #[cfg(debug_assertions)]
+            let popover_builder = popover_builder.incognito(true);
+            popover_builder.build()?;
+
             // Onboarding okno (první spuštění): skryté, ukáže se jen když
             // chybí config.json. Frontend dodá paralelně @designer
             // (src/onboarding.*) — backend jen okno + commandy.
@@ -251,13 +476,7 @@ pub fn run() {
         })
         .on_menu_event(|app, event| match event.id.as_ref() {
             "settings" => {
-                if let Some(win) = app.get_webview_window("settings") {
-                    // Dock ikona jen když je Settings viditelné (plán-dock-settings).
-                    #[cfg(target_os = "macos")]
-                    let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
-                    let _ = win.show();
-                    let _ = win.set_focus();
-                }
+                show_settings_window(app);
             }
             "quit" => {
                 // Čistota: pokud běží nahrávání, stopneme (WAV se korektně zapíše
@@ -281,6 +500,18 @@ pub fn run() {
                         .set_activation_policy(tauri::ActivationPolicy::Accessory);
                 }
             }
+            // Klik mimo popover ho zavře (okno je focusable, viz builder).
+            // Hide při ztrátě focusu je idempotentní — explicitní hide
+            // (toggle, open_settings, Escape) ničemu nevadí.
+            if window.label() == "popover" {
+                if let tauri::WindowEvent::Focused(false) = event {
+                    crate::log::info("tray", "blur hide reason=focused-false");
+                    match window.hide() {
+                        Ok(()) => crate::log::info("tray", "blur hide ok=true"),
+                        Err(e) => crate::log::warn("tray", format!("blur hide ok=false err=\"{e}\"")),
+                    }
+                }
+            }
         })
         .invoke_handler(tauri::generate_handler![
             load_settings,
@@ -295,6 +526,8 @@ pub fn run() {
             permissions::get_accessibility_permission,
             permissions::open_accessibility_settings,
             finish_onboarding,
+            open_settings,
+            hide_popover,
             history::list_history,
             history::copy_history_entry,
             history::delete_history_entry,

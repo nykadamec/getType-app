@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>gettype</title>
+    <link rel="stylesheet" href="popover.css" />
+  </head>
+  <body>
+    <div id="popover" role="dialog" aria-label="gettype">
+      <div class="header">
+        <div class="app-name">gettype</div>
+        <button id="gear" class="gear" type="button" aria-label="Open Settings" title="Settings">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+            <circle cx="12" cy="12" r="3" />
+          </svg>
+        </button>
+      </div>
+
+      <div class="status">
+        <div class="status-row">
+          <span class="dot" aria-hidden="true"></span>
+          <span class="status-text">Ready</span>
+        </div>
+        <p class="hint" id="hint">Hold ⌥ Space and speak. Release to insert text where your cursor is.</p>
+      </div>
+
+      <div class="segmented" id="mode" role="group" aria-label="Dictation mode">
+        <button type="button" data-mode="push_to_talk" class="active">Push to talk</button>
+        <button type="button" data-mode="toggle">Toggle</button>
+      </div>
+
+      <div class="divider" aria-hidden="true"></div>
+
+      <div class="footer">
+        <div class="model" id="model">Groq · whisper-large-v3-turbo</div>
+        <div class="kbd" id="kbd" aria-hidden="true"></div>
+      </div>
+    </div>
+    <script type="module" src="popover.js"></script>
+  </body>
+</html>

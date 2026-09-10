@@ -24,7 +24,7 @@ const DEFAULT_CONFIG = {
 };
 
 const SECTIONS = {
-  apikey: { title: "API key", sub: "Connect GetType to Groq — stored only on this Mac." },
+  apikey: { title: "API key", sub: "Connect getType to Groq — stored only on this Mac." },
   general: { title: "General", sub: "Permissions, startup and app info." },
   shortcut: { title: "Shortcut", sub: "Global hotkey that starts dictation." },
   output: { title: "Output", sub: "How transcripts reach your apps." },

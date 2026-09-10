@@ -259,7 +259,7 @@ pub fn run() {
             use tauri::tray::TrayIconBuilder;
 
             let settings_item = MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
-            let quit = MenuItem::with_id(app, "quit", "Quit gettype", true, None::<&str>)?;
+            let quit = MenuItem::with_id(app, "quit", "Quit getType", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&settings_item, &quit])?;
 
             // Vlastní A-Waveform tray ikona (černá na transparentní) v template
@@ -273,16 +273,19 @@ pub fn run() {
                 "tray",
                 "register mode=popover show_menu_on_left_click=false menu=settings,quit",
             );
+            // Menu TRVALE NEPŘIPOJujeme (.menu vynecháno): na macOS si
+            // připojené nativní menu (NSStatusItem.setMenu) bere levý klik
+            // pro sebe a Click{Left,Up} vůbec nedorazí do on_tray_icon_event.
+            // Menu držíme stranou a ukážeme ho programově jen na pravý klik.
+            let context_menu = menu.clone();
             TrayIconBuilder::with_id("main-tray")
                 .icon(tray_icon)
                 .icon_as_template(true)
-                .tooltip("gettype")
-                .menu(&menu)
+                .tooltip("getType")
                 // Levý klik = tray popover (viz on_tray_icon_event níže),
-                // pravý klik necháváme nativnímu menu (Settings…/Quit) —
-                // macOS s připojeným menu ukáže menu samo.
+                // pravý klik = programové show_menu (set_menu + inner show).
                 .show_menu_on_left_click(false)
-                .on_tray_icon_event(|tray, event| {
+                .on_tray_icon_event(move |tray, event| {
                     use tauri::tray::{MouseButton, MouseButtonState, TrayIconEvent};
                     // Toggle až na puštění tlačítka (Up), ne na stisk —
                     // jinak by Down + Up překlopily popover dvakrát.
@@ -314,6 +317,35 @@ pub fn run() {
                         }
                         if button == MouseButton::Left && button_state == MouseButtonState::Up {
                             toggle_popover(tray.app_handle(), Some(rect));
+                        } else if button == MouseButton::Right
+                            && button_state == MouseButtonState::Up
+                        {
+                            crate::log::info("tray", "menu show reason=right-click");
+                            if let Err(e) = tray.set_menu(Some(context_menu.clone())) {
+                                crate::log::warn(
+                                    "tray",
+                                    format!("menu attach ok=false err=\"{e}\""),
+                                );
+                            }
+                            match tray.with_inner_tray_icon(|inner| inner.show_menu()) {
+                                Ok(()) => crate::log::info("tray", "menu show ok=true"),
+                                Err(e) => crate::log::warn(
+                                    "tray",
+                                    format!("menu show ok=false err=\"{e}\""),
+                                ),
+                            }
+                            // Odpojit menu hned po zavření: show_menu je synchronní
+                            // performClick (vrátí se až po zavření menu). Bez detach
+                            // by si nativní NSStatusItem bral i levé kliky a popover
+                            // by se už neotevřel. Levý klik má přednost — chybu
+                            // jen zalogovat a pokračovat.
+                            match tray.set_menu(None::<tauri::menu::Menu<tauri::Wry>>) {
+                                Ok(()) => crate::log::info("tray", "menu detach ok=true"),
+                                Err(e) => crate::log::warn(
+                                    "tray",
+                                    format!("menu detach ok=false err=\"{e}\""),
+                                ),
+                            }
                         } else {
                             crate::log::info("tray", "click ignored reason=not-left-up");
                         }
@@ -415,7 +447,7 @@ pub fn run() {
             // dopočítá při každém otevření z rect tray ikony.
             let popover_builder =
                 WebviewWindowBuilder::new(app, "popover", WebviewUrl::App("popover.html".into()))
-                    .title("gettype")
+                    .title("getType")
                     .inner_size(POPOVER_W, 308.0)
                     .decorations(false)
                     .transparent(true) // vyžaduje macOSPrivateApi v tauri.conf.json
@@ -439,7 +471,7 @@ pub fn run() {
                 "onboarding",
                 WebviewUrl::App("onboarding.html".into()),
             )
-            .title("Welcome to gettype")
+            .title("Welcome to getType")
             .inner_size(480.0, 640.0)
             .resizable(false)
             .visible(false)

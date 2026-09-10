@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "gettype",
+  "productName": "getType",
   "version": "0.1.0",
   "identifier": "com.gettype.app",
   "build": {

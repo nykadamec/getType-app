@@ -157,6 +157,26 @@ if (Tauri && Tauri.event) {
   // Escape-cancel (Rust): timer stop + dissolve out hned, hide okna dělá
   // Rust (pill-fade-out + zpožděné hide). Žádný „cancelled" stav.
   Tauri.event.listen("recording-cancelled", endTranscribing);
+  // Cold-start sync (race: první `recording-started` mohl dorazit dřív, než
+  // studené webview subscribnulo eventy — body by zůstal na opacity: 0).
+  // Po attachi listenerů si vyžádáme aktuální stav; je-li akce aktivní,
+  // lokálně doběhneme to, co by udělal zmeškaný event. Generační guardy
+  // i dissolve parametry se nemění — voláme stejné fadeIn/startTimer cesty.
+  if (Tauri.core && typeof Tauri.core.invoke === "function") {
+    Tauri.core
+      .invoke("get_recorder_state")
+      .then((state) => {
+        if (state === "recording") {
+          document.body.classList.remove("transcribing");
+          startTimer();
+          fadeIn();
+        } else if (state === "transcribing") {
+          fadeIn();
+          startTranscribing();
+        }
+      })
+      .catch(() => {});
+  }
 } else {
   console.error("gettype pill: Tauri API not available");
 }

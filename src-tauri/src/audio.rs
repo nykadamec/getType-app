@@ -216,6 +216,7 @@ pub fn start(app: &AppHandle) {
     // Pilulka se jen ukáže — bez focusu, ať nevytrhne uživatele z aplikace.
     // show() zároveň zneplatní čekající fade-hide z předchozího nahrávání.
     crate::pill::show(app);
+    crate::sound::play_start();
     let _ = app.emit("recording-started", json!({ "sample_rate": sample_rate }));
 }
 
@@ -243,6 +244,11 @@ pub fn stop(app: &AppHandle) {
         )
     };
     drop(stream);
+
+    // Zvuk konce nahrávání — fire-and-forget, best-effort (viz sound.rs).
+    // Hraje při každém skutečném stopu (i too-short / preprocess / wav
+    // fail — nahrávání tím skončilo), ne při no-opu bez nahrávání.
+    crate::sound::play_stop();
 
     let duration_ms = started_at.elapsed().as_millis();
 
@@ -348,6 +354,11 @@ pub fn cancel(app: &AppHandle) {
     }
     // Zneplatní doběhlou transkripci i output (generační guard ve stt/output).
     ACTION_GEN.fetch_add(1, Ordering::SeqCst);
+
+    // Stejný stop zvuk jako stop() — cancel je jen jiná cesta konce akce.
+    // Hraje i při cancelu během transcribing (bez nahrávání), ne při
+    // idle no-opu (ten se vrátil už výše).
+    crate::sound::play_stop();
 
     // WAV z transcribing fáze best-effort smazat (při cancelu během
     // nahrávání žádný soubor neexistuje — write přichází až ve stopu).

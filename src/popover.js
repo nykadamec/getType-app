@@ -7,6 +7,22 @@
 
 const invoke = (cmd, args) => window.__TAURI__.core.invoke(cmd, args);
 
+// Most pro frontend logy do Rust stderr logu (diagnostika dvojitého bliknutí).
+// Fire-and-forget: nikdy neblokuje animaci, při selhání tichý fallback na console.
+function tlog(level, msg) {
+  try {
+    invoke("log_frontend", { level, msg }).catch(() => {
+      console.log(`[popover] ${msg}`);
+    });
+  } catch (_) {
+    try {
+      console.log(`[popover] ${msg}`);
+    } catch (_) {
+      // console nedostupné — ignorujeme
+    }
+  }
+}
+
 const card = document.getElementById("popover");
 const gear = document.getElementById("gear");
 const hint = document.getElementById("hint");
@@ -70,26 +86,23 @@ gear.addEventListener("click", () => {
 });
 
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape") invoke("hide_popover").catch(() => {});
+  if (event.key === "Escape") {
+    tlog("info", "hide event source=escape");
+    invoke("hide_popover").catch(() => {});
+  }
 });
 
-// Jemný nástup při každém otevření (okno se jen ukazuje/skrývá,
-// webview žije dál — animace patří na focus, ne na load).
-// Respektuje reduced-motion; bez WAAPI se jen neanimuje.
-function playEntrance() {
-  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-  try {
-    card.animate(
-      { opacity: [0, 1], transform: ["scale(0.98) translateY(-4px)", "scale(1) translateY(0)"] },
-      { duration: 140, easing: "ease-out" },
-    );
-  } catch (_) {
-    // Starší webview bez WAAPI — popover se ukáže bez animace.
-  }
-}
-
 if (window.__TAURI__ && window.__TAURI__.event) {
-  window.__TAURI__.event.listen("tauri://focus", playEntrance).catch(() => {});
+  window.__TAURI__.event
+    .listen("tauri://focus", (event) => {
+      tlog("info", `focus event received payload=${JSON.stringify(event.payload ?? null)}`);
+    })
+    .catch(() => {});
+  window.__TAURI__.event
+    .listen("tauri://blur", (event) => {
+      tlog("info", `blur event received payload=${JSON.stringify(event.payload ?? null)}`);
+    })
+    .catch(() => {});
   // Konfigurace se mohla změnit v Settings — při návratu focusu přenačíst.
   window.__TAURI__.event.listen("tauri://focus", refresh).catch(() => {});
 } else {

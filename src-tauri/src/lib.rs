@@ -9,6 +9,7 @@ mod permissions;
 mod pill;
 mod preprocess;
 mod settings;
+mod sound;
 mod stt;
 mod verify;
 
@@ -98,6 +99,19 @@ fn open_settings(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Most pro frontend logy (popover instrumentace dvojitého bliknutí).
+/// Jen přeposílá do stderr logu — žádná business logika, žádná změna chování.
+/// Kryje stávající `core:default` (stejně jako ostatní commandy popoveru),
+/// žádná nová capability není potřeba.
+#[tauri::command]
+fn log_frontend(level: String, msg: String) {
+    match level.as_str() {
+        "warn" => crate::log::warn("popover", msg),
+        "error" => crate::log::error("popover", msg),
+        _ => crate::log::info("popover", msg),
+    }
+}
+
 /// Skryje tray popover (Escape ve frontendu, rezerva k blur handleru níže).
 #[tauri::command]
 fn hide_popover(app: tauri::AppHandle) -> Result<(), String> {
@@ -111,6 +125,21 @@ fn hide_popover(app: tauri::AppHandle) -> Result<(), String> {
         crate::log::info("tray", "hide_popover popover missing=false");
     }
     Ok(())
+}
+
+/// Aktuální stav rekordéru pro cold-start sync pilulky (`pill.js` si ho
+/// vyžádá po attachi listenerů — zachytí `recording-started` emitnutý dřív,
+/// než studené webview stihlo subscribnout eventy, viz fadeIn race).
+/// "transcribing" | "recording" | "idle".
+#[tauri::command]
+fn get_recorder_state(app: tauri::AppHandle) -> String {
+    if audio::is_transcribing() {
+        "transcribing".to_string()
+    } else if audio::is_recording(&app) {
+        "recording".to_string()
+    } else {
+        "idle".to_string()
+    }
 }
 
 /// Šířka popover okna — musí sedět s `inner_size` v setup() a CSS
@@ -136,14 +165,40 @@ fn toggle_popover(app: &tauri::AppHandle, rect: Option<tauri::Rect>) {
         return;
     }
     crate::log::info("tray", "toggle decision=show reason=hidden");
+    let t0 = std::time::Instant::now();
     position_popover(app, &win, rect);
+    crate::log::info(
+        "tray",
+        format!("toggle about-to-show elapsed_ms={}", t0.elapsed().as_millis()),
+    );
     match win.show() {
-        Ok(()) => crate::log::info("tray", "toggle show ok=true"),
-        Err(e) => crate::log::warn("tray", format!("toggle show ok=false err=\"{e}\"")),
+        Ok(()) => crate::log::info(
+            "tray",
+            format!("toggle show ok=true elapsed_ms={}", t0.elapsed().as_millis()),
+        ),
+        Err(e) => crate::log::warn(
+            "tray",
+            format!(
+                "toggle show ok=false err=\"{e}\" elapsed_ms={}",
+                t0.elapsed().as_millis()
+            ),
+        ),
     }
     match win.set_focus() {
-        Ok(()) => crate::log::info("tray", "toggle focus ok=true"),
-        Err(e) => crate::log::warn("tray", format!("toggle focus ok=false err=\"{e}\"")),
+        Ok(()) => crate::log::info(
+            "tray",
+            format!(
+                "toggle focus ok=true elapsed_ms={}",
+                t0.elapsed().as_millis()
+            ),
+        ),
+        Err(e) => crate::log::warn(
+            "tray",
+            format!(
+                "toggle focus ok=false err=\"{e}\" elapsed_ms={}",
+                t0.elapsed().as_millis()
+            ),
+        ),
     }
 }
 
@@ -157,6 +212,7 @@ fn toggle_popover(app: &tauri::AppHandle, rect: Option<tauri::Rect>) {
 fn position_popover(app: &tauri::AppHandle, win: &tauri::WebviewWindow, rect: Option<tauri::Rect>) {
     const GAP: f64 = 6.0; // mezera mezi menu barem / ikonou a kartou
     const EDGE: f64 = 8.0; // min. odstup karty od stran obrazovky
+    let t0 = std::time::Instant::now();
     crate::log::info("tray", format!("position rect={rect:?}"));
 
     let (mon_x, mon_y, mon_w) = match app.primary_monitor().ok().flatten() {
@@ -217,11 +273,11 @@ fn position_popover(app: &tauri::AppHandle, win: &tauri::WebviewWindow, rect: Op
 
     crate::log::info(
         "tray",
-        format!("position result x={x:.1} y={y:.1} raw_x={x_raw:.1} clamp=[{lo:.1},{hi:.1}] mon_x={mon_x:.1} mon_w={mon_w:.1}"),
+        format!("position result x={x:.1} y={y:.1} raw_x={x_raw:.1} clamp=[{lo:.1},{hi:.1}] mon_x={mon_x:.1} mon_w={mon_w:.1} elapsed_ms={}", t0.elapsed().as_millis()),
     );
     match win.set_position(tauri::Position::Logical(tauri::LogicalPosition { x, y })) {
-        Ok(()) => crate::log::info("tray", format!("position set ok=true x={x:.1} y={y:.1}")),
-        Err(e) => crate::log::warn("tray", format!("position set ok=false err=\"{e}\"")),
+        Ok(()) => crate::log::info("tray", format!("position set ok=true x={x:.1} y={y:.1} elapsed_ms={}", t0.elapsed().as_millis())),
+        Err(e) => crate::log::warn("tray", format!("position set ok=false err=\"{e}\" elapsed_ms={}", t0.elapsed().as_millis())),
     }
 }
 
@@ -560,6 +616,8 @@ pub fn run() {
             finish_onboarding,
             open_settings,
             hide_popover,
+            log_frontend,
+            get_recorder_state,
             history::list_history,
             history::copy_history_entry,
             history::delete_history_entry,

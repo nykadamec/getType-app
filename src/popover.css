@@ -45,7 +45,6 @@ button:focus-visible {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  transform-origin: 50% 0;
 }
 
 /* ---------- header ---------- */

@@ -3,6 +3,7 @@
 mod audio;
 mod history;
 mod hotkey;
+mod log;
 mod output;
 mod permissions;
 mod pill;
@@ -66,6 +67,22 @@ fn set_launch_at_login(app: tauri::AppHandle, enabled: bool) -> Result<(), Strin
 #[tauri::command]
 fn get_launch_at_login(app: tauri::AppHandle) -> Result<bool, String> {
     app.autolaunch().is_enabled().map_err(|e| e.to_string())
+}
+
+/// Konec onboardingu: uloží aktuální config (vznikne config.json =
+/// značka hotova), skryje okno `onboarding` a vrátí menu-bar-only režim.
+/// Stejný vzor jako hide handler Settings níže.
+#[tauri::command]
+fn finish_onboarding(app: tauri::AppHandle) -> Result<(), String> {
+    let config = settings::load();
+    settings::save(&config)?;
+    crate::log::info("onboarding", "finish ok=true");
+    if let Some(win) = app.get_webview_window("onboarding") {
+        let _ = win.hide();
+    }
+    #[cfg(target_os = "macos")]
+    let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+    Ok(())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -189,6 +206,20 @@ pub fn run() {
             let pill_builder = pill_builder.incognito(true);
             pill_builder.build()?;
 
+            // Onboarding okno (první spuštění): skryté, ukáže se jen když
+            // chybí config.json. Frontend dodá paralelně @designer
+            // (src/onboarding.*) — backend jen okno + commandy.
+            WebviewWindowBuilder::new(
+                app,
+                "onboarding",
+                WebviewUrl::App("onboarding.html".into()),
+            )
+            .title("Welcome to gettype")
+            .inner_size(480.0, 640.0)
+            .resizable(false)
+            .visible(false)
+            .build()?;
+
             // Stav nahrávání — drží cpal Stream živý mezi start/stop.
             app.manage(Mutex::new(audio::Recorder::default()));
             // Historie přepisů — načte history.json (chybějící/corrupt → prázdná).
@@ -197,7 +228,23 @@ pub fn run() {
             // Globální hotkey po vytvoření oken; konflikt (obsazená zkratka)
             // jen zalogujeme, aplikace nespadne.
             if let Err(e) = hotkey::apply(app.handle()) {
-                eprintln!("gettype: hotkey apply failed: {e}");
+                crate::log::error("hotkey", format!("apply failed err=\"{e}\""));
+            } else {
+                crate::log::info("hotkey", "apply ok=true");
+            }
+
+            // První spuštění = chybí config.json: Dock ikona + onboarding.
+            // Stejný vzor jako tray settings handler výše. Jinak beze změny
+            // (menu-bar-only). Křížek okno jen skryje — bez configu se po
+            // restartu ukáže znovu.
+            let first_run = settings::config_path().map(|p| !p.exists()).unwrap_or(true);
+            if first_run {
+                if let Some(win) = app.get_webview_window("onboarding") {
+                    #[cfg(target_os = "macos")]
+                    let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
+                    let _ = win.show();
+                    let _ = win.set_focus();
+                }
             }
 
             Ok(())
@@ -221,8 +268,9 @@ pub fn run() {
             _ => {}
         })
         .on_window_event(|window, event| {
-            // Settings window hides instead of closing — app lives in the tray.
-            if window.label() == "settings" {
+            // Settings i onboarding se místo zavření jen skryjí —
+            // aplikace žije v trayi.
+            if window.label() == "settings" || window.label() == "onboarding" {
                 if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                     api.prevent_close();
                     let _ = window.hide();
@@ -243,7 +291,10 @@ pub fn run() {
             get_launch_at_login,
             apply_hotkey,
             permissions::get_mic_permission,
+            permissions::request_mic_permission,
             permissions::get_accessibility_permission,
+            permissions::open_accessibility_settings,
+            finish_onboarding,
             history::list_history,
             history::copy_history_entry,
             history::delete_history_entry,

@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "onboarding",
+  "description": "Capability for the first-run onboarding window (same invoke surface as settings)",
+  "windows": ["onboarding"],
+  "permissions": ["core:default"]
+}

@@ -51,7 +51,7 @@ macOS menu-bar aplikace pro diktaci: globální hotkey → nahrání mikrofonu �
 
 ## Stav
 - [x] UI návrh schválen uživatelem (gettype.pen, 4 obrazovky, @designer)
-- [ ] Jazyk: pevně `cs` vs. auto-detect (Groq umí vynechat `language` → auto)
+- [x] Jazyk: volba v Settings (Voice language: Auto-detect + cs/sk/en/de/pl/uk/ru/es/fr; prázdná hodnota = Groq auto-detect)
 - [ ] První spuštění onboarding (požádat o mic + accessibility oprávnění)
 
 ## Implementační fáze

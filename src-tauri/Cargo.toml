@@ -29,9 +29,11 @@ tauri-plugin-global-shortcut = "2.3.2"
 reqwest = { version = "0.13.4", features = ["multipart", "json"] }
 arboard = "3.6.1"
 enigo = "0.6.1"
-# time: tokio::time::sleep pro async čekání (paste delay / restore) — stejný
-# runtime, na němž běží tauri::async_runtime, žádné blokování executoru.
-tokio = { version = "1", default-features = false, features = ["time"] }
+# time: tokio::time::{sleep, timeout} pro async čekání (paste delay / restore,
+# mic permission timeout) + sync: tokio::sync::oneshot pro předání výsledku
+# completion-handleru — stejný runtime, na němž běží tauri::async_runtime,
+# žádné blokování executoru.
+tokio = { version = "1", default-features = false, features = ["time", "sync"] }
 tauri-plugin-autostart = "2.5.1"
 
 # macOS: bílé pozadí NSWindow pod transparentním titlebarem (settings).
@@ -41,6 +43,9 @@ tauri-plugin-autostart = "2.5.1"
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2-app-kit = { version = "0.3", features = ["NSColor", "NSWindow"] }
 objc2-av-foundation = "0.3"
+# request_mic_permission: completion-handler blok (block2) + Bool typ (objc2).
+block2 = "0.6"
+objc2 = "0.6"
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration

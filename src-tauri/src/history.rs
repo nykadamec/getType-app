@@ -111,7 +111,7 @@ pub fn record(app: &AppHandle, text: &str, model: &str) {
     let now = now_secs();
 
     let Some(state) = app.try_state::<std::sync::Mutex<History>>() else {
-        eprintln!("gettype: history state not managed — skipping record");
+        crate::log::warn("history", "record skipped reason=\"state not managed\"");
         return;
     };
     // Poisoned mutex → stále použijeme vnitřek, historii nezahodíme.
@@ -138,7 +138,7 @@ pub fn record(app: &AppHandle, text: &str, model: &str) {
     );
     history.entries.truncate(MAX_ENTRIES);
     if let Err(e) = save_to_disk(&history.entries) {
-        eprintln!("gettype: history save failed: {e}");
+        crate::log::error("history", format!("save failed err=\"{e}\""));
     }
 }
 
@@ -178,12 +178,12 @@ pub fn copy_history_entry(app: AppHandle, id: String) -> Result<(), String> {
         match arboard::Clipboard::new() {
             Ok(mut clipboard) => {
                 if let Err(e) = clipboard.set_text(&text) {
-                    eprintln!("gettype: history copy failed: {e}");
+                    crate::log::error("history", format!("copy failed err=\"{e}\""));
                 } else {
-                    eprintln!("gettype: history copy ok");
+                    crate::log::info("history", "copy ok=true");
                 }
             }
-            Err(e) => eprintln!("gettype: clipboard open failed: {e}"),
+            Err(e) => crate::log::error("history", format!("clipboard open failed err=\"{e}\"")),
         }
     })
     .map_err(|e| e.to_string())

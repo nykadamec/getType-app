@@ -41,7 +41,7 @@ pub fn process(samples: &[i16]) -> Result<Vec<i16>, String> {
     let (out, gain_db) = normalize(&filtered)?;
 
     let out_ms = out.len() as u64 * 1000 / SAMPLE_RATE as u64;
-    eprintln!("preprocess: in_ms={in_ms} out_ms={out_ms} gain_db={gain_db:.1}");
+    crate::log::info("preprocess", format!("done in_ms={in_ms} out_ms={out_ms} gain_db={gain_db:.1}"));
     Ok(out)
 }
 

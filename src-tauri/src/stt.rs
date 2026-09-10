@@ -10,6 +10,7 @@ use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 
 use crate::settings;
+use crate::log;
 
 const GROQ_URL: &str = "https://api.groq.com/openai/v1/audio/transcriptions";
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
@@ -33,6 +34,10 @@ fn emit_error(app: &AppHandle, message: impl Into<String>) {
 /// (nebo novější akce), výsledek se zahodí: žádný `history::record`, žádný
 /// `output::apply`, jen návrat (pilulku už skryl cancel).
 pub fn transcribe(app: AppHandle, path: PathBuf, generation: u64) {
+    log::info(
+        "stt",
+        format!("transcribe start path=\"{}\" generation={generation}", path.to_string_lossy()),
+    );
     crate::audio::set_transcribing(generation);
     tauri::async_runtime::spawn(async move {
         let result = run(&app, &path).await;
@@ -41,7 +46,7 @@ pub fn transcribe(app: AppHandle, path: PathBuf, generation: u64) {
         // mezitím nezačala novější akce (guard proti shazení jejího Escapu).
         crate::hotkey::release_escape_if_idle(&app);
         if crate::audio::is_stale(generation) {
-            eprintln!("gettype: transcription result discarded (cancelled)");
+            log::info("stt", format!("transcribe discarded stale=true generation={generation}"));
             return;
         }
         match result {
@@ -51,7 +56,7 @@ pub fn transcribe(app: AppHandle, path: PathBuf, generation: u64) {
                 // Jediný owner skrývání je output::apply — žádná duplicitní
                 // pojistka tady (dvojí fade rozbíjel generační počítadlo).
                 let chars = text.chars().count();
-                eprintln!("gettype: transcription-complete {{chars={chars}}}");
+                log::info("stt", format!("transcribe done ok=true chars={chars} generation={generation}"));
                 // Historie: synchronně před output::apply (rychlé, Mutex + malý JSON).
                 crate::history::record(&app, &text, &crate::settings::load().model);
                 crate::output::apply(&app, text.clone(), generation);
@@ -61,7 +66,7 @@ pub fn transcribe(app: AppHandle, path: PathBuf, generation: u64) {
                 );
             }
             Err(message) => {
-                eprintln!("gettype: transcription failed: {message}");
+                log::error("stt", format!("transcribe failed generation={generation} err=\"{message}\""));
                 emit_error(&app, message);
             }
         }
@@ -78,7 +83,7 @@ async fn run(app: &AppHandle, path: &PathBuf) -> Result<String, String> {
     };
 
     // 2. Pilulka přechází do stavu „překládám“.
-    eprintln!("gettype: transcribing-started");
+    log::info("stt", "transcribing started");
     let _ = app.emit("transcribing-started", json!({}));
 
     // 3. request

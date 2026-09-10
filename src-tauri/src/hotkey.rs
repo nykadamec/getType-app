@@ -10,13 +10,20 @@ use tauri_plugin_global_shortcut::{
     Builder as ShortcutBuilder, Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState,
 };
 
-use crate::{audio, settings};
+use crate::{audio, log, settings};
 
 /// Plugin s globálním handlerem. Registruje se před setupem.
 pub fn plugin() -> TauriPlugin<Wry> {
     ShortcutBuilder::new()
         .with_handler(|app, shortcut, event| {
             let pressed = event.state == ShortcutState::Pressed;
+            log::info(
+                "hotkey",
+                format!(
+                    "event key={:?} mods={:?} pressed={pressed}",
+                    shortcut.key, shortcut.mods
+                ),
+            );
             // Holý Escape = cancel celé probíhající akce — nikdy start/stop.
             // `audio::cancel` je mimo akci no-op, takže tady není potřeba
             // žádný další gating. Release Escapu ignorujeme.
@@ -24,7 +31,16 @@ pub fn plugin() -> TauriPlugin<Wry> {
                 // Escape reaguje jen když probíhá akce (recording/transcribing);
                 // mimo ni nic nedělá. Samotný cancel je idempotentní no-op.
                 if pressed && audio::is_active(app) {
+                    log::info("hotkey", "escape pressed active=true -> cancel");
                     audio::cancel(app);
+                } else {
+                    log::info(
+                        "hotkey",
+                        format!(
+                            "escape ignored pressed={pressed} active={}",
+                            audio::is_active(app)
+                        ),
+                    );
                 }
                 return;
             }
@@ -33,17 +49,24 @@ pub fn plugin() -> TauriPlugin<Wry> {
                 // toggle: reagujeme jen na stisk — vnitřní stav rozhodne start/stop
                 "toggle" => {
                     if pressed {
+                        log::info("hotkey", "mode=toggle pressed -> toggle");
                         audio::toggle(app);
+                    } else {
+                        log::info("hotkey", "mode=toggle released ignored");
                     }
                 }
                 // push_to_talk (default): držení = nahrávání, puštění = stop
                 _ => {
                     if pressed {
+                        log::info("hotkey", "mode=push_to_talk pressed -> start");
                         audio::start(app);
                     } else if audio::is_recording(app) {
                         // Guard i pro PTT cancel: po Escapu je stav Idle,
                         // takže doběhnuvší Released nic nespustí.
+                        log::info("hotkey", "mode=push_to_talk released -> stop");
                         audio::stop(app);
+                    } else {
+                        log::info("hotkey", "mode=push_to_talk released ignored idle=true");
                     }
                 }
             }
@@ -58,6 +81,7 @@ pub fn plugin() -> TauriPlugin<Wry> {
 /// Konflikt zkratky vrací Err stringem (frontend ho jen zaloguje).
 pub fn apply(app: &AppHandle) -> Result<(), String> {
     let config = settings::load();
+    log::info("hotkey", format!("apply start hotkey=\"{}\"", config.hotkey));
     let shortcut = parse_hotkey(&config.hotkey)?;
     let shortcuts = app.global_shortcut();
     shortcuts
@@ -66,6 +90,7 @@ pub fn apply(app: &AppHandle) -> Result<(), String> {
     shortcuts
         .register(shortcut)
         .map_err(|e| format!("hotkey \"{}\" registration failed: {e}", config.hotkey))?;
+    log::info("hotkey", format!("apply done hotkey=\"{}\"", config.hotkey));
     // Vzácný overlap: změna zkratky během probíhající akce (`unregister_all`
     // výše shodil i její Escape) → zaregistruj ho zpět pro cancel.
     if audio::is_recording(app) || audio::is_transcribing() {
@@ -94,6 +119,7 @@ fn is_escape_hotkey() -> bool {
 /// proto práci jen naplánujeme mimo handler a hned vrátíme řízení.
 /// Best-effort: chyba (např. už registrováno) akci neruší, jen se zaloguje.
 pub fn register_escape(app: &AppHandle) {
+    log::info("hotkey", "escape register start");
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         do_register_escape(&app);
@@ -120,10 +146,13 @@ pub fn unregister_escape(app: &AppHandle) {
 /// Idle-check běží až v naplánovaném closure (v době provedení), ne v době
 /// volání — jinak by závod mezi koncem staré a startem nové akce prošel.
 pub fn release_escape_if_idle(app: &AppHandle) {
+    log::info("hotkey", "escape release-if-idle start");
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         if !audio::is_recording(&app) && !audio::is_transcribing() {
             do_unregister_escape(&app);
+        } else {
+            log::info("hotkey", "escape release-if-idle skipped busy=true");
         }
     });
 }
@@ -131,20 +160,27 @@ pub fn release_escape_if_idle(app: &AppHandle) {
 /// Synchronní jádro registrace — běží až mimo handler (ve spawned tasku).
 fn do_register_escape(app: &AppHandle) {
     if is_escape_hotkey() {
+        log::info("hotkey", "escape register skipped is-user-hotkey=true");
         return; // uživatelská zkratka už Escape obsluhuje
     }
-    if let Err(e) = app.global_shortcut().register(escape_shortcut()) {
-        eprintln!("gettype: Escape register failed (cancel may not work): {e}");
+    match app.global_shortcut().register(escape_shortcut()) {
+        Ok(()) => log::info("hotkey", "escape register done ok=true"),
+        Err(e) => log::error(
+            "hotkey",
+            format!("escape register failed err=\"{e}\" cancel-may-not-work=true"),
+        ),
     }
 }
 
 /// Synchronní jádro odregistrace — běží až mimo handler (ve spawned tasku).
 fn do_unregister_escape(app: &AppHandle) {
     if is_escape_hotkey() {
+        log::info("hotkey", "escape unregister skipped is-user-hotkey=true");
         return; // patří uživatelské zkratce — nesahej na ni
     }
-    if let Err(e) = app.global_shortcut().unregister(escape_shortcut()) {
-        eprintln!("gettype: Escape unregister failed (ignored): {e}");
+    match app.global_shortcut().unregister(escape_shortcut()) {
+        Ok(()) => log::info("hotkey", "escape unregister done ok=true"),
+        Err(e) => log::warn("hotkey", format!("escape unregister failed ignored=true err=\"{e}\"")),
     }
 }
 

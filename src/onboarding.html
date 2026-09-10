@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GetType — Setup</title>
+    <link rel="stylesheet" href="onboarding.css" />
+    <script src="onboarding.js" defer></script>
+  </head>
+  <body>
+    <div class="ob" data-tauri-drag-region>
+      <!-- Top bar: Back left, step indicator right -->
+      <header class="topbar">
+        <button class="back" id="back-btn" type="button" hidden>‹ Back</button>
+        <span class="back-placeholder" id="back-placeholder" aria-hidden="true"></span>
+        <span class="step" id="step-label">Step 1 of 3</span>
+      </header>
+
+      <!-- ============ STEP 1 — Welcome ============ -->
+      <section class="step active" id="step-1" aria-label="Welcome">
+        <div class="hero">
+          <div class="wave" aria-hidden="true">
+            <span style="--h: 14px"></span>
+            <span style="--h: 26px"></span>
+            <span style="--h: 20px"></span>
+            <span style="--h: 32px"></span>
+            <span style="--h: 16px"></span>
+          </div>
+          <h1 class="h1">Welcome to <strong>getType</strong></h1>
+          <p class="sub">Dictate anywhere on your Mac. Hold ⌥ Space, speak, release — text appears where your cursor is.</p>
+        </div>
+        <div class="card steps-card">
+          <div class="srow">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect width="20" height="16" x="2" y="4" rx="2" />
+              <path d="M6 8h.01" /><path d="M10 8h.01" /><path d="M14 8h.01" /><path d="M18 8h.01" />
+              <path d="M6 12h.01" /><path d="M18 12h.01" /><path d="M7 16h10" />
+            </svg>
+            <span>Hold the shortcut</span>
+          </div>
+          <div class="srow">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+              <path d="M12 19v3" />
+            </svg>
+            <span>Speak</span>
+          </div>
+          <div class="srow">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect width="8" height="4" x="8" y="2" rx="1" ry="1" />
+              <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
+            </svg>
+            <span>Text is pasted</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ STEP 2 — API key ============ -->
+      <section class="step" id="step-2" aria-label="API key">
+        <div class="hero compact">
+          <div class="wave" aria-hidden="true">
+            <span style="--h: 14px"></span>
+            <span style="--h: 26px"></span>
+            <span style="--h: 20px"></span>
+            <span style="--h: 32px"></span>
+            <span style="--h: 16px"></span>
+          </div>
+          <h1 class="h1">Add your Groq API key</h1>
+          <p class="sub">Free at console.groq.com — stored only in your Mac Keychain.</p>
+        </div>
+        <div class="status-row">
+          <span class="dot" id="key-dot"></span>
+          <span class="status-text" id="key-status">Not connected</span>
+        </div>
+        <div class="input-wrap" id="key-wrap">
+          <input class="input" id="api-key" type="password" autocomplete="off" autocorrect="off"
+            autocapitalize="off" spellcheck="false" placeholder="gsk_…" />
+          <button class="eye" id="key-toggle" type="button" aria-label="Show key">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
+              <circle cx="12" cy="12" r="3" />
+            </svg>
+          </button>
+        </div>
+        <p class="error" id="key-error" hidden></p>
+        <button class="btn-dark btn-block" id="save-key-btn" type="button">Save &amp; verify</button>
+        <p class="hint center">Get a key at
+          <a class="hint-link" id="groq-link" href="https://console.groq.com/keys" target="_blank" rel="noopener">console.groq.com</a>.
+          You can change it later in Settings.
+        </p>
+      </section>
+
+      <!-- ============ STEP 3 — Permissions ============ -->
+      <section class="step" id="step-3" aria-label="Permissions">
+        <div class="hero compact">
+          <div class="wave" aria-hidden="true">
+            <span style="--h: 14px"></span>
+            <span style="--h: 26px"></span>
+            <span style="--h: 20px"></span>
+            <span style="--h: 32px"></span>
+            <span style="--h: 16px"></span>
+          </div>
+          <h1 class="h1">Enable permissions</h1>
+          <p class="sub">getType needs the microphone to hear you and Accessibility to paste where your cursor is.</p>
+        </div>
+        <div class="card perm-card">
+          <div class="prow">
+            <svg class="pico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+              <path d="M12 19v3" />
+            </svg>
+            <div class="ptexts">
+              <span class="ptitle">Microphone</span>
+              <span class="pdesc" id="mic-status">Checking…</span>
+            </div>
+            <button class="btn-dark btn-small" id="mic-btn" type="button">Enable</button>
+          </div>
+          <div class="prow">
+            <svg class="pico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="16" cy="4" r="1" />
+              <path d="m18 19 1-7-6 1" />
+              <path d="m5 8 3-3 5.5 3-2.36 3.5" />
+              <path d="M4.24 14.5a5 5 0 0 0 6.88 6" />
+              <path d="M13.76 17.5a5 5 0 0 0-6.88-6" />
+            </svg>
+            <div class="ptexts">
+              <span class="ptitle">Accessibility</span>
+              <span class="pdesc" id="a11y-status">Checking…</span>
+            </div>
+            <button class="btn-light btn-small" id="a11y-btn" type="button">Open Settings</button>
+          </div>
+        </div>
+        <p class="error center" id="perm-error" hidden></p>
+      </section>
+
+      <!-- Fixed footer — Continue na všech krocích stejně (Y=389 v designu) -->
+      <footer class="footer">
+        <button class="btn-dark btn-continue" id="continue-btn" type="button">Continue</button>
+        <p class="footnote" id="footnote">Requires a free Groq API key — next step</p>
+      </footer>
+    </div>
+  </body>
+</html>

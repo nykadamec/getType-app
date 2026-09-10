@@ -13,6 +13,8 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Instant;
 use tauri::{AppHandle, Emitter, Manager};
 
+use crate::log;
+
 /// Cílový formát WAV, který jde rovnou do Whisper API (fáze 4).
 pub const TARGET_SAMPLE_RATE: u32 = 16_000;
 /// Pod 300 ms záznam nemá smysl posílat — spíš omylek klávesy.
@@ -118,19 +120,30 @@ pub fn start(app: &AppHandle) {
     {
         let recorder = lock_recorder(app);
         if matches!(recorder.state, RecorderState::Recording { .. }) {
+            log::info("audio", "start ignored already-recording=true");
             return; // už běží — ignoruj (double-press, toggle vs. push kolize)
         }
     }
+    log::info("audio", "start requested");
 
     let host = cpal::default_host();
     let Some(device) = host.default_input_device() else {
+        log::error("audio", "start failed reason=\"no microphone available\"");
         emit_error(app, "No microphone available");
         return;
     };
+    let device_name = device
+        .description()
+        .map(|d| d.name().to_string())
+        .unwrap_or_else(|_| "unknown".to_string());
     let config = match device.default_input_config() {
         Ok(config) => config,
         Err(e) => {
             // Typicky TCC: aplikaci nebyl povolen přístup k mikrofonu.
+            log::error(
+                "audio",
+                format!("start failed reason=\"cannot open microphone (mic permission?)\" err=\"{e}\""),
+            );
             emit_error(app, format!("Cannot open microphone (mic permission?): {e}"));
             return;
         }
@@ -148,6 +161,10 @@ pub fn start(app: &AppHandle) {
         SampleFormat::I16 => build_stream::<i16>(app, &device, &stream_config, &samples, channels),
         SampleFormat::U16 => build_stream::<u16>(app, &device, &stream_config, &samples, channels),
         other => {
+            log::error(
+                "audio",
+                format!("start failed reason=\"unsupported sample format\" format=\"{other:?}\""),
+            );
             emit_error(app, format!("Unsupported microphone sample format: {other:?}"));
             return;
         }
@@ -155,11 +172,13 @@ pub fn start(app: &AppHandle) {
     let stream = match stream {
         Ok(stream) => stream,
         Err(e) => {
+            log::error("audio", format!("start failed reason=\"cannot build stream\" err=\"{e}\""));
             emit_error(app, format!("Cannot open microphone: {e}"));
             return;
         }
     };
     if let Err(e) = stream.play() {
+        log::error("audio", format!("start failed reason=\"cannot play stream\" err=\"{e}\""));
         emit_error(app, format!("Cannot start microphone stream: {e}"));
         return; // stream se dropne na konci scope → nic nezůstane viset
     }
@@ -169,6 +188,7 @@ pub fn start(app: &AppHandle) {
         // Double-check po async fázi (build/play) — proti závodu při rychlém
         // přepínání hotkey na obou testech výše nestačí.
         if matches!(recorder.state, RecorderState::Recording { .. }) {
+            log::info("audio", "start raced already-recording=true dropping-stream=true");
             return; // mezitím začalo jiné nahrávání → tento stream se dropne
         }
         recorder.stream = Some(stream);
@@ -181,6 +201,13 @@ pub fn start(app: &AppHandle) {
         // (uživatel stihl začít znovu dřív, než stará doběhla).
         ACTION_GEN.fetch_add(1, Ordering::SeqCst);
     }
+    log::info(
+        "audio",
+        format!(
+            "start ok=true device=\"{device_name}\" rate={sample_rate} channels={channels} format=\"{format:?}\" generation={}",
+            current_generation()
+        ),
+    );
 
     // Akce běží → zachyť globální Escape pro cancel. V idle stavu zůstává
     // Escape odregistrovaný a propadá do ostatních aplikací.
@@ -220,6 +247,10 @@ pub fn stop(app: &AppHandle) {
     let duration_ms = started_at.elapsed().as_millis();
 
     if duration_ms < MIN_DURATION_MS {
+        log::warn(
+            "audio",
+            format!("stop rejected reason=\"too short\" duration_ms={duration_ms} min_ms={MIN_DURATION_MS}"),
+        );
         emit_error(app, "Recording too short");
         // Akce končí bez transkripce → Escape zpět ostatním aplikacím
         // (jen když mezitím nezačala nová akce).
@@ -231,9 +262,9 @@ pub fn stop(app: &AppHandle) {
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
         .clone();
-    eprintln!(
-        "gettype: recording-stopped {{duration_ms={duration_ms}, samples={}}}",
-        raw.len()
+    log::info(
+        "audio",
+        format!("stop duration_ms={duration_ms} samples={} rate={sample_rate}", raw.len()),
     );
     let resampled = resample_linear(&raw, sample_rate, TARGET_SAMPLE_RATE);
 
@@ -241,6 +272,7 @@ pub fn stop(app: &AppHandle) {
     let processed = match crate::preprocess::process(&resampled) {
         Ok(processed) => processed,
         Err(e) => {
+            log::warn("audio", format!("stop failed reason=\"preprocess rejected\" err=\"{e}\""));
             emit_error(app, e);
             crate::hotkey::release_escape_if_idle(app);
             return;
@@ -250,6 +282,7 @@ pub fn stop(app: &AppHandle) {
     let path = match write_wav(&processed) {
         Ok(path) => path,
         Err(e) => {
+            log::error("audio", format!("stop failed reason=\"wav write failed\" err=\"{e}\""));
             emit_error(app, format!("WAV write failed: {e}"));
             crate::hotkey::release_escape_if_idle(app);
             return;
@@ -258,6 +291,13 @@ pub fn stop(app: &AppHandle) {
 
     lock_recorder(app).last_recording = Some(path.clone());
     let generation = current_generation();
+    log::info(
+        "audio",
+        format!(
+            "stop ok=true path=\"{}\" duration_ms={duration_ms} generation={generation}",
+            path.to_string_lossy()
+        ),
+    );
     let _ = app.emit(
         "recording-stopped",
         json!({
@@ -303,6 +343,7 @@ pub fn cancel(app: &AppHandle) {
     // přes clear_transcribing + is_stale a výsledek zahodí).
     let was_transcribing = TRANSCRIBING_GEN.swap(0, Ordering::SeqCst) != 0;
     if !was_recording && !was_transcribing {
+        log::info("audio", "cancel ignored idle=true");
         return; // idle — Escape nic nedělá
     }
     // Zneplatní doběhlou transkripci i output (generační guard ve stt/output).
@@ -316,7 +357,10 @@ pub fn cancel(app: &AppHandle) {
         }
     }
 
-    eprintln!("gettype: action-cancelled");
+    log::info(
+        "audio",
+        format!("cancel ok=true was_recording={was_recording} was_transcribing={was_transcribing}"),
+    );
     crate::pill::fade_out(app);
     let _ = app.emit("recording-cancelled", json!({}));
     // Akce skončila → Escape zpět ostatním aplikacím (jen když mezitím
@@ -347,6 +391,10 @@ where
             use cpal::ErrorKind::{DeviceNotAvailable, PermissionDenied};
             match err.kind() {
                 PermissionDenied => {
+                    log::error(
+                        "audio",
+                        format!("stream fatal reason=\"mic permission denied\" err=\"{err}\""),
+                    );
                     emit_error(
                         &handle,
                         "Microphone access denied — allow mic in System Settings",
@@ -354,12 +402,13 @@ where
                     stop(&handle);
                 }
                 DeviceNotAvailable => {
+                    log::error("audio", format!("stream fatal reason=\"mic not available\" err=\"{err}\""));
                     emit_error(&handle, "Microphone is not available");
                     stop(&handle);
                 }
                 // Underrun/overrun je běžný šum CoreAudio — jen warning,
                 // nahrávání tím nekončí a stav se nemění.
-                _ => eprintln!("gettype: audio stream warning (ignored, recording continues): {err}"),
+                _ => log::warn("audio", format!("stream warning ignored=true err=\"{err}\"")),
             }
         },
         None, // bez timeoutu — čekáme, až CoreAudio postaví unit

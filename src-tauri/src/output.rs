@@ -15,6 +15,7 @@ use std::time::Duration;
 use tauri::AppHandle;
 
 use crate::settings;
+use crate::log;
 
 /// Prodleva mezi nastavením clipboardu a simulací ⌘V (ať si appky stihnou
 /// clipboard vyzvednout).
@@ -35,9 +36,10 @@ const RESTORE_DELAY: Duration = Duration::from_millis(250);
 /// (cancel mohl přijít během PASTE_DELAY).
 pub fn apply(app: &AppHandle, text: String, generation: u64) {
     if crate::audio::is_stale(generation) {
-        eprintln!("gettype: output skipped (cancelled)");
+        log::info("output", format!("apply skipped stale=true generation={generation}"));
         return;
     }
+    log::info("output", format!("apply start chars={} generation={generation}", text.chars().count()));
     crate::pill::fade_out(app);
 
     let config = settings::load();
@@ -49,18 +51,18 @@ pub fn apply(app: &AppHandle, text: String, generation: u64) {
             let handle = app.clone();
             if let Err(e) = handle.run_on_main_thread(move || {
                 if crate::audio::is_stale(generation) {
-                    eprintln!("gettype: clipboard set skipped (cancelled)");
+                    log::info("output", format!("clipboard set skipped stale=true generation={generation}"));
                     return;
                 }
                 match Clipboard::new() {
                     Ok(mut clipboard) => match clipboard.set_text(&text) {
-                        Ok(()) => eprintln!("gettype: clipboard set ok (copy-only)"),
-                        Err(e) => eprintln!("gettype: clipboard write failed: {e}"),
+                        Ok(()) => log::info("output", "clipboard set ok=true copy-only=true"),
+                        Err(e) => log::error("output", format!("clipboard write failed copy-only=true err=\"{e}\"")),
                     },
-                    Err(e) => eprintln!("gettype: clipboard open failed: {e}"),
+                    Err(e) => log::error("output", format!("clipboard open failed copy-only=true err=\"{e}\"")),
                 }
             }) {
-                eprintln!("gettype: run_on_main_thread failed (clipboard): {e}");
+                log::error("output", format!("run_on_main_thread failed context=\"clipboard\" err=\"{e}\""));
             }
         }
         return;
@@ -75,28 +77,28 @@ pub fn apply(app: &AppHandle, text: String, generation: u64) {
         // Async sleep — čekání blokuje jen tento task, ne executor.
         tokio::time::sleep(PASTE_DELAY).await;
         if crate::audio::is_stale(generation) {
-            eprintln!("gettype: paste skipped (cancelled)");
+            log::info("output", format!("paste skipped stale=true generation={generation}"));
             return;
         }
         if let Err(e) = handle.run_on_main_thread(move || {
-            eprintln!("gettype: paste start");
+            log::info("output", format!("paste start generation={generation}"));
             let mut clipboard = match Clipboard::new() {
                 Ok(clipboard) => clipboard,
                 Err(e) => {
-                    eprintln!("gettype: clipboard open failed: {e}");
+                    log::error("output", format!("clipboard open failed context=\"paste\" err=\"{e}\""));
                     return;
                 }
             };
             let previous = clipboard.get_text().ok();
             if let Err(e) = clipboard.set_text(&text) {
-                eprintln!("gettype: clipboard write failed: {e}");
+                log::error("output", format!("clipboard write failed context=\"paste\" err=\"{e}\""));
                 return; // paste by vložil starý obsah — radši nic
             }
-            eprintln!("gettype: clipboard set ok");
+            log::info("output", "clipboard set ok=true context=\"paste\"");
             if let Err(e) = paste_text() {
-                eprintln!("gettype: paste failed: {e}");
+                log::error("output", format!("paste failed err=\"{e}\""));
             } else {
-                eprintln!("gettype: paste end");
+                log::info("output", "paste done ok=true");
             }
             // Blokující sleep na main threadu (~250 ms): drží pořadí
             // paste → restore v rámci jednoho handle bez dalšího přehozu.
@@ -104,13 +106,13 @@ pub fn apply(app: &AppHandle, text: String, generation: u64) {
             if !copy_clipboard {
                 if let Some(old) = previous {
                     match clipboard.set_text(&old) {
-                        Ok(()) => eprintln!("gettype: clipboard restore ok"),
-                        Err(e) => eprintln!("gettype: clipboard restore failed: {e}"),
+                        Ok(()) => log::info("output", "clipboard restore ok=true"),
+                        Err(e) => log::error("output", format!("clipboard restore failed err=\"{e}\"")),
                     }
                 }
             }
         }) {
-            eprintln!("gettype: run_on_main_thread failed (paste): {e}");
+            log::error("output", format!("run_on_main_thread failed context=\"paste\" err=\"{e}\""));
         }
     });
 }

@@ -1,0 +1,6 @@
+[env]
+# Minimální podporovaná verze macOS (Tahoe). Drží compile-time
+# availability checky v Rustu + sladěno s
+# src-tauri/tauri.conf.json (bundle.macOS.minimumSystemVersion)
+# a src-tauri/Info.plist (LSMinimumSystemVersion).
+MACOSX_DEPLOYMENT_TARGET = "26.0"

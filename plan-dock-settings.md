@@ -13,7 +13,7 @@ Když se otevře Settings panel, aplikace je viditelná v docku. Po zavření/sk
 1. Při otevření Settings (tray menu „settings"): `app.set_activation_policy(Regular)` + `show()` + `set_focus()` (+ případně `set_dock_visibility` ekvivalent dle API).
 2. Při skrytí/zavření Settings (`CloseRequested` handler): `hide()` + zpět `ActivationPolicy::Accessory`.
 3. Pozor: přepnutí na Regular aktivuje appku (může vzít focus) — přijatelné, protože uživatel právě otevřel Settings. Přepnutí zpět nesmí nechat viset dock ikonu.
-4. Ověřit na macOS 13+: tray ikona zůstává, dock ikona se objeví/zmizí s oknem.
+4. Ověřit na macOS 26+: tray ikona zůstává, dock ikona se objeví/zmizí s oknem.
 
 ## Varianty (rozhodnuto)
 - A: Přepínat tam a zpět (dock jen když je Settings viditelné). ← vybráno

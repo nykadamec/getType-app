@@ -26,7 +26,7 @@ That's it — no Dock icon, just a menu bar icon.
 
 ## Requirements
 
-- macOS 13+
+- macOS 26+ (Tahoe and newer)
 - Free Groq API key ([console.groq.com](https://console.groq.com)) — paste it in Settings, one-click verification included.
 - Permissions: Microphone + Accessibility (System Settings → Privacy & Security).
 

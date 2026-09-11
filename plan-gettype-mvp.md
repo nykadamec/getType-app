@@ -11,7 +11,7 @@ macOS menu-bar aplikace pro diktaci: globální hotkey → nahrání mikrofonu �
 
 ## Stack
 
-- **Tauri 2** (Rust backend + web frontend), macOS 13+
+- **Tauri 2** (Rust backend + web frontend), macOS 26+
 - Appka bez Dock ikony — LSUIElement / NSApplication.accessory, jen menu bar (Tauri tray)
 
 ## Architektura

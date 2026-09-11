@@ -7,7 +7,6 @@
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{FromSample, SampleFormat, SizedSample};
 use serde_json::json;
-use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Instant;
@@ -36,7 +35,6 @@ pub enum RecorderState {
 #[derive(Default)]
 pub struct Recorder {
     pub state: RecorderState,
-    pub last_recording: Option<PathBuf>,
     /// Stream musí žít po celou dobu nahrávání — dropne se v stop().
     stream: Option<cpal::Stream>,
     /// Vzorky sdílené s audio callbackem. Callback sahá jen sem, nikdy na
@@ -220,9 +218,12 @@ pub fn start(app: &AppHandle) {
     let _ = app.emit("recording-started", json!({ "sample_rate": sample_rate }));
 }
 
-/// Stopne stream, resampluje na 16 kHz mono a zapíše WAV. Resetuje stav.
-/// Úspěch předává dokonalý WAV do `stt::transcribe` (pilulka přechází do
-/// stavu „překládám“); chyby jdou přes `emit_error` (schovává pilulku).
+/// Stopne stream, resampluje na 16 kHz mono a enkóduje WAV do paměti.
+/// Resetuje stav. Úspěch předává WAV byty do `stt::transcribe` (pilulka
+/// přechází do stavu „překládám“); chyby jdou přes `emit_error`.
+///
+/// Nic se neukládá na disk (Fáze A2): žádný disk-roundtrip, žádná retence
+/// k řešení — po úspěšném přepisu není co mazat.
 pub fn stop(app: &AppHandle) {
     // Stream vyjmeme pod zámkem, ale dropujeme až po odemčení (Drop
     // streamu může chvíli blokovat; audio thread mezitím klidně dokončí callback).
@@ -264,10 +265,18 @@ pub fn stop(app: &AppHandle) {
         return;
     }
 
-    let raw = samples
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .clone();
+    // Přesun bufferu bez kopie (Fáze B4): po dropu streamu audio callback
+    // svůj Arc klon už pustil, takže try_unwrap typicky vyjde. Vzácný
+    // fallback (callback ještě žije) kopíruje — nikdy nepanikuje.
+    let raw = match Arc::try_unwrap(samples) {
+        Ok(mutex) => mutex
+            .into_inner()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()),
+        Err(arc) => arc
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone(),
+    };
     log::info(
         "audio",
         format!("stop duration_ms={duration_ms} samples={} rate={sample_rate}", raw.len()),
@@ -285,42 +294,42 @@ pub fn stop(app: &AppHandle) {
         }
     };
 
-    let path = match write_wav(&processed) {
-        Ok(path) => path,
+    let wav = match encode_wav_bytes(&processed) {
+        Ok(wav) => wav,
         Err(e) => {
-            log::error("audio", format!("stop failed reason=\"wav write failed\" err=\"{e}\""));
-            emit_error(app, format!("WAV write failed: {e}"));
+            log::error("audio", format!("stop failed reason=\"wav encode failed\" err=\"{e}\""));
+            emit_error(app, format!("WAV encode failed: {e}"));
             crate::hotkey::release_escape_if_idle(app);
             return;
         }
     };
 
-    lock_recorder(app).last_recording = Some(path.clone());
     let generation = current_generation();
     log::info(
         "audio",
         format!(
-            "stop ok=true path=\"{}\" duration_ms={duration_ms} generation={generation}",
-            path.to_string_lossy()
+            "stop ok=true bytes={} duration_ms={duration_ms} generation={generation}",
+            wav.len()
         ),
     );
     let _ = app.emit(
         "recording-stopped",
         json!({
             "duration_ms": duration_ms,
-            "path": path.to_string_lossy(),
         }),
     );
 
     // Pilulka zůstává viditelná (timer už stopnutý) a přechází do stavu
     // „překládám“ — skrývá ji až stt/output v koncovém stavu (úspěch i chyba).
-    crate::stt::transcribe(app.clone(), path, generation);
+    crate::stt::transcribe(app.clone(), wav, generation);
 }
 
 /// Zruší celou probíhající akci (Escape): drop streamu + zahození bufferu
-/// bez WAV write, stav → Idle, zneplatnění doběhlé transkripce/outputu
-/// (generační guard), best-effort smazání WAV z transcribing fáze, okamžitý
-/// fade-out pilulky + event `recording-cancelled`.
+/// bez WAV enkódování, stav → Idle, zneplatnění doběhlé transkripce/outputu
+/// (generační guard), okamžitý fade-out pilulky + event `recording-cancelled`.
+///
+/// Žádné soubory neexistují (nahrávky žijí jen v paměti — A2), takže není
+/// co mazat.
 ///
 /// Mimo probíhající akci (Idle, nic se nepřepisuje) je no-op — žádný event,
 /// žádný fade. Krátká nahrávka (<300 ms) zrušená Escapem jde touto cestou,
@@ -359,14 +368,6 @@ pub fn cancel(app: &AppHandle) {
     // Hraje i při cancelu během transcribing (bez nahrávání), ne při
     // idle no-opu (ten se vrátil už výše).
     crate::sound::play_stop();
-
-    // WAV z transcribing fáze best-effort smazat (při cancelu během
-    // nahrávání žádný soubor neexistuje — write přichází až ve stopu).
-    if was_transcribing {
-        if let Some(path) = lock_recorder(app).last_recording.take() {
-            let _ = std::fs::remove_file(&path);
-        }
-    }
 
     log::info(
         "audio",
@@ -482,38 +483,23 @@ fn resample_linear(samples: &[i16], from_rate: u32, to_rate: u32) -> Vec<i16> {
     out
 }
 
-/// `$HOME/Library/Application Support/gettype/recordings`
-fn recordings_dir() -> Option<PathBuf> {
-    let home = std::env::var("HOME").ok()?;
-    Some(
-        PathBuf::from(home)
-            .join("Library")
-            .join("Application Support")
-            .join("gettype")
-            .join("recordings"),
-    )
-}
-
-/// Zapíše 16-bit PCM mono WAV, vrátí cestu k souboru.
-fn write_wav(samples: &[i16]) -> Result<PathBuf, String> {
-    let dir = recordings_dir().ok_or_else(|| "$HOME is not set".to_string())?;
-    std::fs::create_dir_all(&dir).map_err(|e| format!("create recordings dir failed: {e}"))?;
-    let ms = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis())
-        .unwrap_or(0);
-    let path = dir.join(format!("rec-{ms}.wav"));
-
+/// Enkóduje 16-bit PCM mono WAV do paměti (Fáze A2) — žádný zápis na disk,
+/// žádný zpětný read ve stt, žádné hromadění `rec-*.wav` v Application Support.
+fn encode_wav_bytes(samples: &[i16]) -> Result<Vec<u8>, String> {
     let spec = hound::WavSpec {
         channels: 1,
         sample_rate: TARGET_SAMPLE_RATE,
         bits_per_sample: 16,
         sample_format: hound::SampleFormat::Int,
     };
-    let mut writer = hound::WavWriter::create(&path, spec).map_err(|e| e.to_string())?;
-    for &sample in samples {
-        writer.write_sample(sample).map_err(|e| e.to_string())?;
+    let mut cursor = std::io::Cursor::new(Vec::new());
+    {
+        let mut writer =
+            hound::WavWriter::new(&mut cursor, spec).map_err(|e| e.to_string())?;
+        for &sample in samples {
+            writer.write_sample(sample).map_err(|e| e.to_string())?;
+        }
+        writer.finalize().map_err(|e| e.to_string())?;
     }
-    writer.finalize().map_err(|e| e.to_string())?;
-    Ok(path)
+    Ok(cursor.into_inner())
 }

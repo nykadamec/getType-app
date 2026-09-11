@@ -7,7 +7,8 @@
 // Vše, co sahá na NSPasteboard / CGEvent (clipboard + enigo), běží VÝHRADNĚ
 // na main threadu přes `AppHandle::run_on_main_thread` — volání z async
 // tasku mimo main thread segfaultuje celý proces (tichý pád bez paniky).
-// Jeden `Clipboard` handle na celou apply (read previous + set + restore).
+// Paste a případný restore jsou dvě za sebou zařazené main-thread closure —
+// pořadí drží fronta, čekání mezi nimi běží mimo main thread (Fáze A3).
 
 use arboard::Clipboard;
 use enigo::{Direction, Enigo, Key, Keyboard, Settings};
@@ -32,8 +33,8 @@ const RESTORE_DELAY: Duration = Duration::from_millis(250);
 /// Jediný owner skrývání pilulky — stt.rs po apply žádný další fade nevolá.
 ///
 /// Po cancelu (`generation` je stale) nic nezapisuje: ani clipboard, ani ⌘V
-/// (enigo). Kontroluje se na vstupu i těsně před pastem na main threadu
-/// (cancel mohl přijít během PASTE_DELAY).
+/// (enigo). Kontroluje se na vstupu, před pastem i před restorem (cancel
+/// mohl přijít během PASTE_DELAY / RESTORE_DELAY).
 pub fn apply(app: &AppHandle, text: String, generation: u64) {
     if crate::audio::is_stale(generation) {
         log::info("output", format!("apply skipped stale=true generation={generation}"));
@@ -68,11 +69,13 @@ pub fn apply(app: &AppHandle, text: String, generation: u64) {
         return;
     }
 
-    // Auto-paste zapnuté: async task jen sleepuje, celá sekvence
-    // (read previous → set → ⌘V → případný restore, jeden Clipboard handle)
-    // běží v jediné main-thread closure — pořadí je tím garantované.
+    // Auto-paste zapnuté: sekvence read previous → set → ⌘V běží v main-thread
+    // closure, případný restore až v druhé closure po RESTORE_DELAY (Fáze A3).
+    // Obě closure jdou přes stejnou main-thread frontu za sebou, takže pořadí
+    // paste → restore je garantované — a main thread během čekání neblokuje.
     let copy_clipboard = config.copy_clipboard;
     let handle = app.clone();
+    let restore_handle = app.clone();
     tauri::async_runtime::spawn(async move {
         // Async sleep — čekání blokuje jen tento task, ne executor.
         tokio::time::sleep(PASTE_DELAY).await;
@@ -80,18 +83,23 @@ pub fn apply(app: &AppHandle, text: String, generation: u64) {
             log::info("output", format!("paste skipped stale=true generation={generation}"));
             return;
         }
+        // One-shot kanál: paste closure pošle zpět původní clipboard
+        // (nebo None = nerestorovat). Restore se pak naplánuje níže.
+        let (tx, rx) = tokio::sync::oneshot::channel::<Option<String>>();
         if let Err(e) = handle.run_on_main_thread(move || {
             log::info("output", format!("paste start generation={generation}"));
             let mut clipboard = match Clipboard::new() {
                 Ok(clipboard) => clipboard,
                 Err(e) => {
                     log::error("output", format!("clipboard open failed context=\"paste\" err=\"{e}\""));
+                    let _ = tx.send(None);
                     return;
                 }
             };
             let previous = clipboard.get_text().ok();
             if let Err(e) = clipboard.set_text(&text) {
                 log::error("output", format!("clipboard write failed context=\"paste\" err=\"{e}\""));
+                let _ = tx.send(None);
                 return; // paste by vložil starý obsah — radši nic
             }
             log::info("output", "clipboard set ok=true context=\"paste\"");
@@ -100,19 +108,34 @@ pub fn apply(app: &AppHandle, text: String, generation: u64) {
             } else {
                 log::info("output", "paste done ok=true");
             }
-            // Blokující sleep na main threadu (~250 ms): drží pořadí
-            // paste → restore v rámci jednoho handle bez dalšího přehozu.
-            std::thread::sleep(RESTORE_DELAY);
-            if !copy_clipboard {
-                if let Some(old) = previous {
-                    match clipboard.set_text(&old) {
-                        Ok(()) => log::info("output", "clipboard restore ok=true"),
-                        Err(e) => log::error("output", format!("clipboard restore failed err=\"{e}\"")),
-                    }
-                }
-            }
+            let restore = if copy_clipboard { None } else { previous };
+            let _ = tx.send(restore);
         }) {
             log::error("output", format!("run_on_main_thread failed context=\"paste\" err=\"{e}\""));
+            return;
+        }
+        match rx.await {
+            Ok(Some(old)) => {
+                // Čekání mimo main thread — UI mezitím nezamrzá.
+                tokio::time::sleep(RESTORE_DELAY).await;
+                if crate::audio::is_stale(generation) {
+                    log::info("output", format!("restore skipped stale=true generation={generation}"));
+                    return;
+                }
+                if let Err(e) = restore_handle.run_on_main_thread(move || {
+                    match Clipboard::new() {
+                        Ok(mut clipboard) => match clipboard.set_text(&old) {
+                            Ok(()) => log::info("output", "clipboard restore ok=true"),
+                            Err(e) => log::error("output", format!("clipboard restore failed err=\"{e}\""))
+                        },
+                        Err(e) => log::error("output", format!("clipboard open failed context=\"restore\" err=\"{e}\""))
+                    }
+                }) {
+                    log::error("output", format!("run_on_main_thread failed context=\"restore\" err=\"{e}\""));
+                }
+            }
+            Ok(None) => {}
+            Err(_) => log::warn("output", "restore skipped reason=\"paste closure dropped\""),
         }
     });
 }

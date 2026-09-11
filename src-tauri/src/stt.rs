@@ -5,7 +5,7 @@
 // jdou jako event `transcription-error` do frontendu — žádné paniky.
 
 use serde_json::json;
-use std::path::PathBuf;
+use std::sync::OnceLock;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 
@@ -14,6 +14,25 @@ use crate::log;
 
 const GROQ_URL: &str = "https://api.groq.com/openai/v1/audio/transcriptions";
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Sdílený HTTP klient pro všechny transkripce (Fáze A1).
+/// `Client::builder().build()` je drahé (TLS setup) a bez reuse přichází
+/// každá dikce o keep-alive spojení. Cachuje se i chyba buildu — proces by
+/// stejně bez TLS nic neposlal, ale nepanikujeme (styl celého backendu).
+fn http_client() -> Result<&'static reqwest::Client, String> {
+    static CLIENT: OnceLock<Result<reqwest::Client, String>> = OnceLock::new();
+    match CLIENT.get_or_init(|| {
+        reqwest::Client::builder()
+            .timeout(REQUEST_TIMEOUT)
+            .pool_idle_timeout(Duration::from_secs(90))
+            .pool_max_idle_per_host(4)
+            .build()
+            .map_err(|e| format!("HTTP client error: {e}"))
+    }) {
+        Ok(client) => Ok(client),
+        Err(e) => Err(e.clone()),
+    }
+}
 
 /// Koncový stav pilulky: CSS fade-out + zpožděné hide (idempotentní).
 fn fade_out_pill(app: &AppHandle) {
@@ -33,14 +52,15 @@ fn emit_error(app: &AppHandle, message: impl Into<String>) {
 /// `generation` patří k akci z `audio::stop` — pokud mezitím přišel cancel
 /// (nebo novější akce), výsledek se zahodí: žádný `history::record`, žádný
 /// `output::apply`, jen návrat (pilulku už skryl cancel).
-pub fn transcribe(app: AppHandle, path: PathBuf, generation: u64) {
+/// `wav` jsou hotové WAV byty z `audio::stop` — žádný disk-roundtrip (A2).
+pub fn transcribe(app: AppHandle, wav: Vec<u8>, generation: u64) {
     log::info(
         "stt",
-        format!("transcribe start path=\"{}\" generation={generation}", path.to_string_lossy()),
+        format!("transcribe start bytes={} generation={generation}", wav.len()),
     );
     crate::audio::set_transcribing(generation);
     tauri::async_runtime::spawn(async move {
-        let result = run(&app, &path).await;
+        let result = run(&app, wav).await;
         crate::audio::clear_transcribing(generation);
         // Transkripce doběhla → Escape zpět ostatním aplikacím, jen když
         // mezitím nezačala novější akce (guard proti shazení jejího Escapu).
@@ -74,7 +94,7 @@ pub fn transcribe(app: AppHandle, path: PathBuf, generation: u64) {
 }
 
 /// Celý HTTP tok; Ok(text) nebo Err(hláška pro pilulku/stderr).
-async fn run(app: &AppHandle, path: &PathBuf) -> Result<String, String> {
+async fn run(app: &AppHandle, wav: Vec<u8>) -> Result<String, String> {
     // 1. API key z macOS Keychain.
     let api_key = match settings::get_api_key() {
         Ok(Some(key)) => key,
@@ -86,14 +106,9 @@ async fn run(app: &AppHandle, path: &PathBuf) -> Result<String, String> {
     log::info("stt", "transcribing started");
     let _ = app.emit("transcribing-started", json!({}));
 
-    // 3. request
+    // 3. request (sdílený klient s keep-alive — A1, WAV byty z paměti — A2)
     let config = settings::load();
-    let wav = std::fs::read(path).map_err(|e| format!("Cannot read recording: {e}"))?;
-
-    let client = reqwest::Client::builder()
-        .timeout(REQUEST_TIMEOUT)
-        .build()
-        .map_err(|e| format!("HTTP client error: {e}"))?;
+    let client = http_client()?;
 
     let mut form = reqwest::multipart::Form::new()
         .text("model", config.model.clone())

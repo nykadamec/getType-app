@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
+use std::sync::{OnceLock, RwLock};
 
 pub const KEYCHAIN_SERVICE: &str = "com.gettype.app";
 pub const KEYCHAIN_ACCOUNT: &str = "groq_api_key";
@@ -53,7 +54,22 @@ pub fn config_path() -> Option<PathBuf> {
 }
 
 /// Missing or corrupt file → defaults. Partial file → missing fields default in.
+///
+/// Čtení jde přes in-memory cache (Fáze B5): `load()` se volá při každé
+/// dikci (stt + output), čtení z disku pokaždé je zbytečné. Invalidace v `save()`.
+fn config_cache() -> &'static RwLock<Config> {
+    static CACHE: OnceLock<RwLock<Config>> = OnceLock::new();
+    CACHE.get_or_init(|| RwLock::new(load_from_disk()))
+}
+
 pub fn load() -> Config {
+    config_cache()
+        .read()
+        .map(|guard| guard.clone())
+        .unwrap_or_else(|poisoned| poisoned.into_inner().clone())
+}
+
+fn load_from_disk() -> Config {
     let Some(path) = config_path() else {
         return Config::default();
     };
@@ -69,7 +85,12 @@ pub fn save(config: &Config) -> Result<(), String> {
         fs::create_dir_all(dir).map_err(|e| format!("create config dir failed: {e}"))?;
     }
     let json = serde_json::to_string_pretty(config).map_err(|e| e.to_string())?;
-    fs::write(&path, json).map_err(|e| format!("write config failed: {e}"))
+    fs::write(&path, json).map_err(|e| format!("write config failed: {e}"))?;
+    // Invalidace cache — odteď čte `load()` novou hodnotu.
+    *config_cache()
+        .write()
+        .unwrap_or_else(|poisoned| poisoned.into_inner()) = config.clone();
+    Ok(())
 }
 
 fn keychain_entry() -> Result<keyring::Entry, String> {
@@ -77,7 +98,31 @@ fn keychain_entry() -> Result<keyring::Entry, String> {
 }
 
 /// Ok(None) when no entry exists; Err on real keychain failure.
+///
+/// Úspěšné čtení se cachuje v paměti (Fáze B5) — Keychain IPC při každé
+/// dikci je zbytečné. Chyby se necacheují (můžou být přechodné).
+/// Invalidace v set/delete. Cache nikdy neopouští proces, nikdy se neloguje.
+fn api_key_cache() -> &'static RwLock<Option<Option<String>>> {
+    static CACHE: OnceLock<RwLock<Option<Option<String>>>> = OnceLock::new();
+    CACHE.get_or_init(|| RwLock::new(None))
+}
+
 pub fn get_api_key() -> Result<Option<String>, String> {
+    if let Some(cached) = api_key_cache()
+        .read()
+        .map(|guard| guard.clone())
+        .unwrap_or(None)
+    {
+        return Ok(cached);
+    }
+    let result = read_api_key()?;
+    *api_key_cache()
+        .write()
+        .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(result.clone());
+    Ok(result)
+}
+
+fn read_api_key() -> Result<Option<String>, String> {
     let entry = keychain_entry()?;
     match entry.get_password() {
         Ok(password) => Ok(Some(password)),
@@ -121,15 +166,23 @@ pub fn masked_api_key() -> Result<Option<String>, String> {
 pub fn set_api_key(key: &str) -> Result<(), String> {
     keychain_entry()?
         .set_password(key)
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    *api_key_cache()
+        .write()
+        .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(Some(key.to_string()));
+    Ok(())
 }
 
 /// Deleting a non-existent entry is treated as success.
 pub fn delete_api_key() -> Result<(), String> {
     let entry = keychain_entry()?;
     match entry.delete_credential() {
-        Ok(()) => Ok(()),
-        Err(keyring::Error::NoEntry) => Ok(()),
-        Err(e) => Err(e.to_string()),
+        Ok(()) => {}
+        Err(keyring::Error::NoEntry) => {}
+        Err(e) => return Err(e.to_string()),
     }
+    *api_key_cache()
+        .write()
+        .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(None);
+    Ok(())
 }

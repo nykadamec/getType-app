@@ -36,7 +36,7 @@ const SECTIONS = {
 
 const LANG_LABELS = {
   "": "Auto-detect",
-  cs: "Čeština",
+  cs: "Czech",
   sk: "Slovenština",
   en: "English",
   de: "Deutsch",

@@ -865,10 +865,12 @@ async function loadHistory() {
 
   els.doneBtn.addEventListener("click", () => {
     try {
-      // Tauri v2: getCurrentWindow (v1 getCurrent neexistuje → TypeError).
-      window.__TAURI__.window.getCurrentWindow().hide();
+      // close() místo hide(): projde přes Rust CloseRequested handler
+      // (prevent_close + hide + návrat na Accessory) — přímé hide() by
+      // obešlo reset activation policy a v Docku by zůstala ikona.
+      window.__TAURI__.window.getCurrentWindow().close();
     } catch (err) {
-      console.error("hide failed", err);
+      console.error("close failed", err);
     }
   });
 })();

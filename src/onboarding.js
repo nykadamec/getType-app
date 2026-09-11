@@ -68,6 +68,63 @@ function friendlyError(err) {
   return msg;
 }
 
+/* ---------- theme (Light / Dark / System, bez restartu) ---------- */
+
+const THEME_CHOICES = new Set(["light", "dark", "system"]);
+let themeChoice = "system";
+
+function systemPrefersDark() {
+  try {
+    return !!(window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
+  } catch (_) {
+    return false;
+  }
+}
+
+function applyThemeChoice(choice) {
+  themeChoice = THEME_CHOICES.has(choice) ? choice : "system";
+  const dark =
+    themeChoice === "dark" ? true : themeChoice === "light" ? false : systemPrefersDark();
+  document.documentElement.dataset.theme = dark ? "dark" : "light";
+}
+
+function themeFromEvent(payload) {
+  if (typeof payload === "string") return payload;
+  if (payload && typeof payload.theme === "string") return payload.theme;
+  return null;
+}
+
+async function initTheme() {
+  try {
+    const loaded = await invoke("load_settings");
+    applyThemeChoice(loaded && loaded.config && loaded.config.theme);
+  } catch (_) {
+    // Defenzivně: chybějící config → light.
+    document.documentElement.dataset.theme = "light";
+  }
+}
+
+try {
+  const mq = window.matchMedia("(prefers-color-scheme: dark)");
+  const onSystem = () => {
+    if (themeChoice === "system") applyThemeChoice("system");
+  };
+  if (typeof mq.addEventListener === "function") mq.addEventListener("change", onSystem);
+  else if (typeof mq.addListener === "function") mq.addListener(onSystem);
+} catch (_) {}
+
+initTheme();
+
+try {
+  const Tauri = window.__TAURI__;
+  if (Tauri && Tauri.event && typeof Tauri.event.listen === "function") {
+    Tauri.event.listen("theme-changed", (event) => {
+      const next = themeFromEvent(event && event.payload);
+      if (next) applyThemeChoice(next);
+    }).catch(() => {});
+  }
+} catch (_) {}
+
 /* ---------- kroky ---------- */
 
 function showStep(n) {

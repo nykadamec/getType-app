@@ -7,6 +7,41 @@
 
 const invoke = (cmd, args) => window.__TAURI__.core.invoke(cmd, args);
 
+/* ---------- theme (Light / Dark / System, bez restartu) ---------- */
+
+const THEME_CHOICES = new Set(["light", "dark", "system"]);
+let themeChoice = "system";
+
+function systemPrefersDark() {
+  try {
+    return !!(window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
+  } catch (_) {
+    return false;
+  }
+}
+
+function applyThemeChoice(choice) {
+  themeChoice = THEME_CHOICES.has(choice) ? choice : "system";
+  const dark =
+    themeChoice === "dark" ? true : themeChoice === "light" ? false : systemPrefersDark();
+  document.documentElement.dataset.theme = dark ? "dark" : "light";
+}
+
+function themeFromEvent(payload) {
+  if (typeof payload === "string") return payload;
+  if (payload && typeof payload.theme === "string") return payload.theme;
+  return null;
+}
+
+try {
+  const mq = window.matchMedia("(prefers-color-scheme: dark)");
+  const onSystem = () => {
+    if (themeChoice === "system") applyThemeChoice("system");
+  };
+  if (typeof mq.addEventListener === "function") mq.addEventListener("change", onSystem);
+  else if (typeof mq.addListener === "function") mq.addListener(onSystem);
+} catch (_) {}
+
 // Most pro frontend logy do Rust stderr logu (diagnostika dvojitého bliknutí).
 // Fire-and-forget: nikdy neblokuje animaci, při selhání tichý fallback na console.
 function tlog(level, msg) {
@@ -61,8 +96,10 @@ async function refresh() {
   try {
     const loaded = await invoke("load_settings");
     config = loaded.config;
+    applyThemeChoice(loaded.config && loaded.config.theme);
     render();
   } catch (err) {
+    document.documentElement.dataset.theme = "light";
     console.error("gettype popover: load_settings failed", err);
   }
 }
@@ -105,6 +142,13 @@ if (window.__TAURI__ && window.__TAURI__.event) {
     .catch(() => {});
   // Konfigurace se mohla změnit v Settings — při návratu focusu přenačíst.
   window.__TAURI__.event.listen("tauri://focus", refresh).catch(() => {});
+  window.__TAURI__.event
+    .listen("theme-changed", (event) => {
+      const payload = event && event.payload;
+      const next = themeFromEvent(payload);
+      if (next) applyThemeChoice(next);
+    })
+    .catch(() => {});
 } else {
   console.error("gettype popover: Tauri API not available");
 }

@@ -3,6 +3,7 @@
 :root {
   --bg: #ffffff;
   --surface: #f5f5f5;
+  --surface-2: #efefef;
   --border: #e6e6e6;
   --text: #171717;
   --text-2: #6b6b6b;
@@ -11,6 +12,25 @@
   --inverse-text: #ffffff;
   --error: #b91c1c;
   --ok: #22c55e;
+  color-scheme: light;
+}
+
+/* Dark — stejné tokeny jako settings (bg #101010, surface #1A1A1A,
+   border #2A2A2A, text #F5F5F5 / #A8A8A8 / #828282,
+   CTA inverse #FFFFFF + text #171717). */
+html[data-theme="dark"] {
+  --bg: #101010;
+  --surface: #1a1a1a;
+  --surface-2: #222222;
+  --border: #2a2a2a;
+  --text: #f5f5f5;
+  --text-2: #a8a8a8;
+  --text-3: #828282;
+  --inverse: #ffffff;
+  --inverse-text: #171717;
+  --error: #f87171;
+  --ok: #22c55e;
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }

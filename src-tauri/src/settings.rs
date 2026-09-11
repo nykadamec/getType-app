@@ -16,6 +16,7 @@ pub struct Config {
     pub copy_clipboard: bool,
     pub model: String,
     pub language: String,
+    pub theme: String,
 }
 
 impl Default for Config {
@@ -27,6 +28,7 @@ impl Default for Config {
             copy_clipboard: true,
             model: "whisper-large-v3-turbo".into(),
             language: "cs".into(),
+            theme: "system".into(),
         }
     }
 }
@@ -81,6 +83,38 @@ pub fn get_api_key() -> Result<Option<String>, String> {
         Ok(password) => Ok(Some(password)),
         Err(keyring::Error::NoEntry) => Ok(None),
         Err(e) => Err(e.to_string()),
+    }
+}
+
+/// SECURITY: vrací plaintext klíč z Keychainu pouze do lokálního Settings
+/// okna na explicitní vyžádání uživatelem (oko) — momentálně používaný klíč.
+/// Nikdy nelogovat, necachovat na frontend mimo input, neposílat po síti.
+#[tauri::command]
+pub fn reveal_api_key() -> Result<Option<String>, String> {
+    get_api_key()
+}
+
+/// Maskovaný tvar skutečného klíče z Keychainu pro status/placeholder.
+/// `None` když klíč není. Jinak `"gsk_••••" + poslední 4 znaky`;
+/// pro klíč kratší než 8 znaků jen `"••••" + poslední znaky`
+/// (u klíče ≤ 4 znaky jen `"••••"` — nikdy nevrací celý klíč).
+#[tauri::command]
+pub fn masked_api_key() -> Result<Option<String>, String> {
+    match get_api_key()? {
+        None => Ok(None),
+        Some(key) => {
+            if key.len() < 8 {
+                if key.len() <= 4 {
+                    Ok(Some("••••".to_string()))
+                } else {
+                    let tail: String = key.chars().rev().take(4).collect::<String>().chars().rev().collect();
+                    Ok(Some(format!("••••{tail}")))
+                }
+            } else {
+                let tail: String = key.chars().rev().take(4).collect::<String>().chars().rev().collect();
+                Ok(Some(format!("gsk_••••{tail}")))
+            }
+        }
     }
 }
 

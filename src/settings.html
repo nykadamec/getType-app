@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Settings</title>
+    <script>try{if(window.matchMedia&&matchMedia("(prefers-color-scheme: dark)").matches)document.documentElement.dataset.theme="dark";}catch(e){}</script>
     <link rel="stylesheet" href="settings.css" />
     <script src="settings.js" defer></script>
   </head>
@@ -86,12 +87,22 @@
               <span class="dot" id="key-dot"></span>
               <span class="status-text" id="key-status">Not connected</span>
             </div>
-            <input class="input" id="api-key" type="password" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="gsk_…" />
+            <div class="input-wrap">
+              <input class="input" id="api-key" type="password" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="gsk_…" />
+              <button class="eye" id="key-toggle" type="button" aria-label="Show key">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
+                  <circle cx="12" cy="12" r="3" />
+                </svg>
+              </button>
+            </div>
             <p class="error" id="key-error" hidden></p>
             <div class="btn-row">
               <button class="btn-dark" id="save-key-btn" type="button">Save &amp; verify</button>
+              <button class="btn-light btn-test" id="test-key-btn" type="button" title="Test the key stored on this Mac, without saving the text above">Test connection</button>
               <button class="btn-light" id="disconnect-btn" type="button">Disconnect</button>
             </div>
+            <p class="test-result" id="test-result" hidden></p>
             <p class="hint">Get a key at <a class="hint-link" id="hint-link" href="https://console.groq.com/keys" target="_blank" rel="noopener">console.groq.com → API keys</a>. Never share it.</p>
           </div>
 
@@ -154,6 +165,14 @@
             <div class="row">
               <span class="row-label">Launch at login</span>
               <button class="switch" id="toggle-launch" type="button" role="switch" aria-checked="false"><span class="knob"></span></button>
+            </div>
+            <div class="row">
+              <span class="row-label">Appearance</span>
+              <div class="segmented segmented-small" id="theme-segmented" role="group" aria-label="Appearance">
+                <button type="button" data-theme-value="light">Light</button>
+                <button type="button" data-theme-value="dark">Dark</button>
+                <button type="button" data-theme-value="system">System</button>
+              </div>
             </div>
             <p class="hint">getType v0.1.0 · macOS 14+ · settings stay on this Mac.</p>
           </div>

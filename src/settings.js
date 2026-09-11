@@ -1,6 +1,7 @@
 // gettype — Settings Window V2 (sidebar + sekce, plna verze)
 
-const MASKED_TAIL = "gsk_••••8f2a";
+// Nouzový fallback, když backend masku (zatím) neumí vrátit.
+const FALLBACK_MASK = "gsk_…";
 
 const MODIFIER_SYMBOLS = { Command: "⌘", Option: "⌥", Control: "⌃", Shift: "⇧" };
 const MODIFIER_CODES = new Set([
@@ -21,6 +22,7 @@ const DEFAULT_CONFIG = {
   copy_clipboard: true,
   model: "whisper-large-v3-turbo",
   language: "cs",
+  theme: "system",
 };
 
 const SECTIONS = {
@@ -61,8 +63,11 @@ const els = {
   dot: $("key-dot"),
   status: $("key-status"),
   apiKey: $("api-key"),
+  keyToggle: $("key-toggle"),
   error: $("key-error"),
   saveBtn: $("save-key-btn"),
+  testBtn: $("test-key-btn"),
+  testResult: $("test-result"),
   disconnectBtn: $("disconnect-btn"),
   hintLink: $("hint-link"),
   hotkeyBtn: $("hotkey-btn"),
@@ -86,12 +91,20 @@ const els = {
   historyEmpty: $("history-empty"),
   historyCount: $("history-count"),
   clearHistory: $("clear-history-btn"),
+  themeSegmented: $("theme-segmented"),
 };
 
 let config = { ...DEFAULT_CONFIG };
 let hasApiKey = false;
+// Provenience hodnoty v inputu: true jen když hodnotu vložil reveal
+// z Keychainu a uživatel ji od té doby needitoval (input event → false,
+// pak jde o uživatelský text, který musí zůstat kvůli Save).
+let revealedActive = false;
+// Skutečná maska z backendu (masked_api_key), např. "gsk_••••XxXx".
+let maskedKeyLabel = FALLBACK_MASK;
 let listening = false;
 let saveTimer = null;
+let testResultTimer = null;
 
 function invoke(cmd, args) {
   return window.__TAURI__.core.invoke(cmd, args);
@@ -214,16 +227,95 @@ function onCaptureKeydown(event) {
 function renderKeyStatus() {
   if (hasApiKey) {
     els.dot.classList.add("on");
-    els.status.textContent = `Connected · ${MASKED_TAIL}`;
+    els.status.textContent = `Connected · ${maskedKeyLabel}`;
   } else {
     els.dot.classList.remove("on");
     els.status.textContent = "Not connected";
+  }
+  if (els.testBtn) els.testBtn.disabled = !hasApiKey;
+}
+
+// Načte skutečný konec klíče z backendu. Při jakékoli chybě
+// (vč. "no such command" ve starším buildu) tiše drží fallback.
+async function refreshMaskedKey() {
+  if (!hasApiKey) {
+    maskedKeyLabel = FALLBACK_MASK;
+    return maskedKeyLabel;
+  }
+  try {
+    const m = await invoke("masked_api_key");
+    maskedKeyLabel = typeof m === "string" && m ? m : FALLBACK_MASK;
+  } catch (_) {
+    maskedKeyLabel = FALLBACK_MASK;
+  }
+  return maskedKeyLabel;
+}
+
+function applyMaskToUi() {
+  if (hasApiKey && !els.apiKey.value) els.apiKey.placeholder = maskedKeyLabel;
+  renderKeyStatus();
+}
+
+function showTestResult(msg, ok) {
+  if (!els.testResult) return;
+  clearTimeout(testResultTimer);
+  testResultTimer = null;
+  els.testResult.classList.remove("is-fading");
+  if (!msg) {
+    els.testResult.hidden = true;
+    els.testResult.textContent = "";
+    els.testResult.classList.remove("ok", "fail");
+    return;
+  }
+  els.testResult.hidden = false;
+  els.testResult.textContent = msg;
+  els.testResult.classList.toggle("ok", !!ok);
+  els.testResult.classList.toggle("fail", !ok);
+  // Úspěch po ~4,5 s sám zmizí (fade); neúspěch zůstává, dokud uživatel nezasáhne.
+  if (ok) {
+    testResultTimer = setTimeout(() => {
+      els.testResult.classList.add("is-fading");
+      setTimeout(() => {
+        if (els.testResult.classList.contains("is-fading")) showTestResult("");
+      }, 400);
+    }, 4500);
   }
 }
 
 function showError(msg) {
   els.error.textContent = msg;
   els.error.hidden = !msg;
+}
+
+async function onTestSavedKey() {
+  if (!els.testBtn || els.testBtn.disabled) return;
+  const original = "Test connection";
+  els.testBtn.disabled = true;
+  els.testBtn.classList.add("testing");
+  els.testBtn.textContent = "Testing…";
+  showTestResult("");
+  try {
+    const res = await invoke("test_saved_key");
+    if (res && typeof res === "object") {
+      if (res.ok) showTestResult("Connection successful", true);
+      else showTestResult(res.message || "Connection failed — check the saved key.", false);
+    } else if (typeof res === "string") {
+      showTestResult("Connection successful", true);
+    } else {
+      showTestResult("Connection successful", true);
+    }
+  } catch (err) {
+    const raw = typeof err === "string" ? err : String(err ?? "");
+    if (raw.includes("no such command") || raw.includes("test_saved_key")) {
+      showTestResult("Test isn't available in this build yet — save & verify instead.", false);
+    } else {
+      showTestResult(raw || "Test failed.", false);
+    }
+  } finally {
+    els.testBtn.disabled = !hasApiKey;
+    els.testBtn.classList.remove("testing");
+    els.testBtn.textContent = original;
+  }
 }
 
 async function onSaveKey() {
@@ -235,12 +327,18 @@ async function onSaveKey() {
   els.saveBtn.disabled = true;
   els.saveBtn.textContent = "Verifying…";
   showError("");
+  showTestResult("");
   try {
     await invoke("verify_api_key", { key: value });
     await invoke("save_api_key", { key: value });
     hasApiKey = true;
     els.apiKey.value = "";
-    els.apiKey.placeholder = MASKED_TAIL;
+    revealedActive = false;
+    await refreshMaskedKey();
+    els.apiKey.placeholder = maskedKeyLabel;
+    els.apiKey.type = "password";
+    if (els.keyToggle) els.keyToggle.setAttribute("aria-label", "Show key");
+    showTestResult("");
     renderKeyStatus();
   } catch (err) {
     showError(typeof err === "string" ? err : String(err));
@@ -258,13 +356,71 @@ async function onDisconnect() {
     return;
   }
   hasApiKey = false;
+  maskedKeyLabel = FALLBACK_MASK;
   els.apiKey.value = "";
+  revealedActive = false;
   els.apiKey.placeholder = "gsk_…";
+  els.apiKey.type = "password";
+  if (els.keyToggle) els.keyToggle.setAttribute("aria-label", "Show key");
   showError("");
+  showTestResult("");
   renderKeyStatus();
 }
 
-/* ---------- previews ---------- */
+async function onToggleKey() {
+  try {
+    // Hodnota z revealu (needitoraná uživatelem) → návrat do původního
+    // stavu: prázdný input + maska v placeholderu, bez teček v plné délce.
+    if (els.apiKey.value.trim() !== "" && revealedActive) {
+      els.apiKey.value = "";
+      revealedActive = false;
+      els.apiKey.type = "password";
+      els.apiKey.placeholder = maskedKeyLabel;
+      if (els.keyToggle) els.keyToggle.setAttribute("aria-label", "Show key");
+      return;
+    }
+    // Rozepsaný uživatelský text → jen lokální show/hide, text zůstává kvůli Save.
+    if (els.apiKey.value.trim() !== "") {
+      const show = els.apiKey.type === "password";
+      els.apiKey.type = show ? "text" : "password";
+      if (els.keyToggle) els.keyToggle.setAttribute("aria-label", show ? "Hide key" : "Show key");
+      return;
+    }
+    // Prázdný input a už je odhaleno (např. po revealu a smazání) → jen skryj zpět.
+    if (els.apiKey.type === "text") {
+      els.apiKey.type = "password";
+      revealedActive = false;
+      if (els.keyToggle) els.keyToggle.setAttribute("aria-label", "Show key");
+      return;
+    }
+    // Prázdný input → ukaž MOMENTÁLNĚ POUŽÍVANÝ klíč z Keychainu.
+    let saved = null;
+    try {
+      saved = await invoke("reveal_api_key");
+    } catch (err) {
+      const raw = typeof err === "string" ? err : String(err ?? "");
+      // Starší build bez nového commandu → nic nerozbít, jen tiše skončit.
+      if (raw.includes("no such command") || raw.includes("reveal_api_key")) return;
+      console.error("reveal_api_key failed", err);
+      showTestResult("Couldn't load the saved key.", false);
+      return;
+    }
+    if (typeof saved === "string" && saved) {
+      els.apiKey.value = saved;
+      revealedActive = true;
+      els.apiKey.type = "text";
+      if (els.keyToggle) els.keyToggle.setAttribute("aria-label", "Hide key");
+      showTestResult("");
+    } else {
+      showTestResult(
+        hasApiKey ? "Couldn't load the saved key." : "No saved key on this Mac.",
+        false,
+      );
+    }
+  } catch (_) {
+    // Defenzivně: oko nikdy nesmí rozbít okno.
+  }
+}
 
 function modeLabel() {
   return config.mode === "toggle" ? "Toggle" : "Push to talk";
@@ -299,6 +455,63 @@ function bindSwitch(el, key) {
     renderSwitch(el, config[key]);
     scheduleSave();
   });
+}
+
+/* ---------- theme (Light / Dark / System) ---------- */
+
+const THEME_CHOICES = new Set(["light", "dark", "system"]);
+let themeChoice = "system";
+
+function systemPrefersDark() {
+  try {
+    return !!(window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
+  } catch (_) {
+    return false;
+  }
+}
+
+function normalizeTheme(v) {
+  return THEME_CHOICES.has(v) ? v : "system";
+}
+
+function applyThemeChoice(choice) {
+  themeChoice = normalizeTheme(choice);
+  const dark = themeChoice === "dark" ? true : themeChoice === "light" ? false : systemPrefersDark();
+  document.documentElement.dataset.theme = dark ? "dark" : "light";
+  renderTheme();
+}
+
+function renderTheme() {
+  if (!els.themeSegmented) return;
+  els.themeSegmented.querySelectorAll("button").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.themeValue === themeChoice);
+  });
+}
+
+function themeFromEvent(payload) {
+  if (typeof payload === "string") return payload;
+  if (payload && typeof payload.theme === "string") return payload.theme;
+  return null;
+}
+
+async function setTheme(choice) {
+  const next = normalizeTheme(choice);
+  if (config.theme === next && themeChoice === next) return;
+  config.theme = next;
+  applyThemeChoice(next);
+  try {
+    await invoke("save_config", { config });
+  } catch (err) {
+    console.error("save_config (theme) failed", err);
+  }
+  try {
+    const Tauri = window.__TAURI__;
+    if (Tauri && Tauri.event && typeof Tauri.event.emit === "function") {
+      await Tauri.event.emit("theme-changed", next);
+    }
+  } catch (err) {
+    console.error("theme-changed emit failed", err);
+  }
 }
 
 /* ---------- permissions (read-only status) ---------- */
@@ -495,10 +708,12 @@ async function loadHistory() {
     console.error("get_launch_at_login failed", err);
   }
 
-  // prvotni render
+  // prvotni render — skutečný konec klíče z backendu, fallback "gsk_…"
+  await refreshMaskedKey();
+  applyThemeChoice(config.theme);
   renderKeyStatus();
   els.apiKey.value = "";
-  els.apiKey.placeholder = hasApiKey ? MASKED_TAIL : "gsk_…";
+  els.apiKey.placeholder = hasApiKey ? maskedKeyLabel : "gsk_…";
   renderHotkey();
   renderMode();
   renderSwitch(els.autoPaste, config.auto_paste);
@@ -521,6 +736,15 @@ async function loadHistory() {
   });
 
   els.saveBtn.addEventListener("click", onSaveKey);
+  if (els.testBtn) els.testBtn.addEventListener("click", onTestSavedKey);
+  if (els.keyToggle) {
+    els.keyToggle.addEventListener("click", onToggleKey);
+  }
+  els.apiKey.addEventListener("input", () => {
+    // Jakýkoli ruční zásah do hodnoty po revealu → jde o uživatelský text.
+    revealedActive = false;
+    showTestResult("");
+  });
   els.apiKey.addEventListener("keydown", (e) => {
     if (e.key === "Enter") onSaveKey();
   });
@@ -555,6 +779,22 @@ async function loadHistory() {
     });
   });
 
+  if (els.themeSegmented) {
+    els.themeSegmented.querySelectorAll("button").forEach((btn) => {
+      btn.addEventListener("click", () => setTheme(btn.dataset.themeValue));
+    });
+  }
+
+  // System vzhled se může změnit za běhu — reagovat jen při volbě System.
+  try {
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const onSystem = () => {
+      if (themeChoice === "system") applyThemeChoice("system");
+    };
+    if (typeof mq.addEventListener === "function") mq.addEventListener("change", onSystem);
+    else if (typeof mq.addListener === "function") mq.addListener(onSystem);
+  } catch (_) {}
+
   bindSwitch(els.autoPaste, "auto_paste");
   bindSwitch(els.copyClipboard, "copy_clipboard");
 
@@ -582,14 +822,22 @@ async function loadHistory() {
     }
   });
 
-  window.addEventListener("focus", () => {
+  window.addEventListener("focus", async () => {
     refreshPermissions();
     loadHistory();
+    try {
+      const loaded = await invoke("load_settings");
+      hasApiKey = loaded.has_api_key;
+    } catch (_) {}
+    await refreshMaskedKey();
+    applyMaskToUi();
   });
-  document.addEventListener("visibilitychange", () => {
+  document.addEventListener("visibilitychange", async () => {
     if (!document.hidden) {
       refreshPermissions();
       loadHistory();
+      await refreshMaskedKey();
+      applyMaskToUi();
     }
   });
 
@@ -599,6 +847,10 @@ async function loadHistory() {
   const Tauri = window.__TAURI__;
   if (Tauri && Tauri.event && typeof Tauri.event.listen === "function") {
     Tauri.event.listen("transcription-complete", () => loadHistory());
+    Tauri.event.listen("theme-changed", (event) => {
+      const next = themeFromEvent(event && event.payload);
+      if (next) applyThemeChoice(next);
+    });
   }
 
   els.model.addEventListener("change", () => {

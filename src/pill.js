@@ -6,6 +6,53 @@
 
 import { animate } from "./vendor/motion-mini.js";
 
+/* ---------- theme (Light / Dark / System, bez restartu) ---------- */
+
+const THEME_CHOICES = new Set(["light", "dark", "system"]);
+let themeChoice = "system";
+
+function systemPrefersDark() {
+  try {
+    return !!(window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
+  } catch (_) {
+    return false;
+  }
+}
+
+function applyThemeChoice(choice) {
+  themeChoice = THEME_CHOICES.has(choice) ? choice : "system";
+  const dark =
+    themeChoice === "dark" ? true : themeChoice === "light" ? false : systemPrefersDark();
+  document.documentElement.dataset.theme = dark ? "dark" : "light";
+}
+
+function themeFromEvent(payload) {
+  if (typeof payload === "string") return payload;
+  if (payload && typeof payload.theme === "string") return payload.theme;
+  return null;
+}
+
+async function initTheme() {
+  try {
+    const loaded = await window.__TAURI__.core.invoke("load_settings");
+    applyThemeChoice(loaded && loaded.config && loaded.config.theme);
+  } catch (_) {
+    // Defenzivně: chybějící config → light (žádný flash do tmy).
+    document.documentElement.dataset.theme = "light";
+  }
+}
+
+try {
+  const mq = window.matchMedia("(prefers-color-scheme: dark)");
+  const onSystem = () => {
+    if (themeChoice === "system") applyThemeChoice("system");
+  };
+  if (typeof mq.addEventListener === "function") mq.addEventListener("change", onSystem);
+  else if (typeof mq.addListener === "function") mq.addListener(onSystem);
+} catch (_) {}
+
+initTheme();
+
 const body = document.body;
 const timerEl = document.getElementById("timer");
 let tick = null;
@@ -157,6 +204,10 @@ if (Tauri && Tauri.event) {
   // Escape-cancel (Rust): timer stop + dissolve out hned, hide okna dělá
   // Rust (pill-fade-out + zpožděné hide). Žádný „cancelled" stav.
   Tauri.event.listen("recording-cancelled", endTranscribing);
+  Tauri.event.listen("theme-changed", (event) => {
+    const next = themeFromEvent(event && event.payload);
+    if (next) applyThemeChoice(next);
+  });
   // Cold-start sync (race: první `recording-started` mohl dorazit dřív, než
   // studené webview subscribnulo eventy — body by zůstal na opacity: 0).
   // Po attachi listenerů si vyžádáme aktuální stav; je-li akce aktivní,

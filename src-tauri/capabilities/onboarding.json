@@ -3,5 +3,5 @@
   "identifier": "onboarding",
   "description": "Capability for the first-run onboarding window (same invoke surface as settings)",
   "windows": ["onboarding"],
-  "permissions": ["core:default"]
+  "permissions": ["core:default", "core:event:default"]
 }

@@ -1,6 +1,37 @@
 /* gettype — tray popover (návrh 01 Popover — Idle, rám ncumZ).
    Light minimal monochrome: stejné tokeny jako settings/pill. */
 
+:root {
+  --bg: #ffffff;
+  --surface: #f5f5f5;
+  --surface-2: #efefef;
+  --border: #e6e6e6;
+  --text: #171717;
+  --text-2: #6b6b6b;
+  --text-3: #a8a8a8;
+  --inverse: #171717;
+  --inverse-text: #ffffff;
+  --shadow: 0 8px 28px rgba(0, 0, 0, 0.1);
+  color-scheme: light;
+}
+
+/* Dark — odvozeno ze stejných tokenů jako settings
+   (bg #101010, surface #1A1A1A, surface-2 #222222, border #2A2A2A,
+   text #F5F5F5 / #A8A8A8 / #828282, CTA inverse #FFFFFF). */
+html[data-theme="dark"] {
+  --bg: #1a1a1a;
+  --surface: #222222;
+  --surface-2: #222222;
+  --border: #2a2a2a;
+  --text: #f5f5f5;
+  --text-2: #a8a8a8;
+  --text-3: #828282;
+  --inverse: #ffffff;
+  --inverse-text: #171717;
+  --shadow: 0 8px 28px rgba(0, 0, 0, 0.55);
+  color-scheme: dark;
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -31,16 +62,16 @@ button {
 }
 
 button:focus-visible {
-  outline: 1px solid #a8a8a8;
+  outline: 1px solid var(--text-3);
   outline-offset: 2px;
 }
 
 #popover {
   width: 300px;
-  background: #ffffff;
-  border: 1px solid #e6e6e6;
+  background: var(--bg);
+  border: 1px solid var(--border);
   border-radius: 12px;
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.1);
+  box-shadow: var(--shadow);
   padding: 18px;
   display: flex;
   flex-direction: column;
@@ -58,7 +89,7 @@ button:focus-visible {
 .app-name {
   font-size: 12px;
   font-weight: 600;
-  color: #171717;
+  color: var(--text);
   letter-spacing: 0;
 }
 
@@ -81,7 +112,7 @@ button:focus-visible {
 .waveform span {
   width: 2px;
   border-radius: 1px;
-  background: #171717;
+  background: var(--text);
   display: block;
 }
 
@@ -90,16 +121,16 @@ button:focus-visible {
   align-items: center;
   justify-content: center;
   padding: 6px;
-  background: #f5f5f5;
+  background: var(--surface);
   border: 1px solid transparent;
   border-radius: 7px;
-  color: #6b6b6b;
+  color: var(--text-2);
   cursor: pointer;
 }
 
 .gear:hover {
-  background: #efefef;
-  color: #171717;
+  background: var(--surface-2);
+  color: var(--text);
 }
 
 .gear:active {
@@ -124,7 +155,7 @@ button:focus-visible {
   width: 8px;
   height: 8px;
   border-radius: 999px;
-  background: #171717;
+  background: var(--text);
   flex-shrink: 0;
 }
 
@@ -132,14 +163,14 @@ button:focus-visible {
   font-size: 22px;
   font-weight: 600;
   letter-spacing: -0.4px;
-  color: #171717;
+  color: var(--text);
   line-height: 1.2;
 }
 
 .hint {
   font-size: 12px;
   line-height: 1.45;
-  color: #6b6b6b;
+  color: var(--text-2);
 }
 
 /* ---------- segmented (režim diktování, zrcadlí settings) ---------- */
@@ -148,7 +179,7 @@ button:focus-visible {
   display: flex;
   gap: 2px;
   padding: 3px;
-  background: #efefef;
+  background: var(--surface-2);
   border-radius: 8px;
 }
 
@@ -160,26 +191,26 @@ button:focus-visible {
   background: transparent;
   font-size: 12px;
   font-weight: 500;
-  color: #6b6b6b;
+  color: var(--text-2);
   cursor: pointer;
   text-align: center;
   line-height: 1.45;
 }
 
 .segmented button.active {
-  background: #171717;
-  color: #ffffff;
+  background: var(--inverse);
+  color: var(--inverse-text);
 }
 
 .segmented button:not(.active):hover {
-  color: #171717;
+  color: var(--text);
 }
 
 /* ---------- divider + footer ---------- */
 
 .divider {
   height: 1px;
-  background: #e6e6e6;
+  background: var(--border);
 }
 
 .footer {
@@ -191,7 +222,7 @@ button:focus-visible {
 
 .model {
   font-size: 11px;
-  color: #a8a8a8;
+  color: var(--text-3);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -206,12 +237,12 @@ button:focus-visible {
 
 .key {
   padding: 4px 7px;
-  background: #f5f5f5;
-  border: 1px solid #e6e6e6;
+  background: var(--surface);
+  border: 1px solid var(--border);
   border-radius: 6px;
   box-shadow: 0 1px 0 rgba(0, 0, 0, 0.05);
   font-size: 12px;
-  color: #171717;
+  color: var(--text);
   line-height: 1;
 }
 

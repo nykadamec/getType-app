@@ -209,6 +209,36 @@ body.transcribing #pill::before {
   letter-spacing: 0.02em;
 }
 
+/* ---------- AI post-processing (Task 9: reuse transcribing spinner) ---------- */
+
+/* Label je skrytý defaultně; enhancing/ai-failed ho ukážou. Spinner
+   (tečky) i zšednutí bere z .transcribing třídy, kterou pill.js přidává
+   spolu s .enhancing — žádný duplicitní styl. */
+#ai-label {
+  display: none;
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--pill-fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 96px;
+}
+
+/* Vlna se schová, ať je na "Enhancing…" místo; tečky zůstanou u labelu. */
+body.enhancing #wave { display: none; }
+
+body.enhancing #ai-label,
+body.ai-failed #ai-label { display: block; }
+
+body.enhancing #dots { margin-left: 0; }
+
+/* Failed: vlna pryč, místo pro zprávu (plný text v title). */
+body.ai-failed #wave { display: none; }
+
+
 /* ---------- transcribing (Groq zpracovává zvuk) ---------- */
 
 /* Tečky stojí na místě timeru (stejné zarovnání); defaultně skryté. */

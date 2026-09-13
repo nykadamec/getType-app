@@ -18,6 +18,9 @@ pub struct Config {
     pub model: String,
     pub language: String,
     pub theme: String,
+    pub ai_enabled: bool,
+    pub ai_default_action: String,
+    pub ai_model: String,
 }
 
 impl Default for Config {
@@ -30,6 +33,9 @@ impl Default for Config {
             model: "whisper-large-v3-turbo".into(),
             language: "cs".into(),
             theme: "system".into(),
+            ai_enabled: false,
+            ai_default_action: "cleanup".into(),
+            ai_model: "llama-3.1-8b-instant".into(),
         }
     }
 }

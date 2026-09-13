@@ -70,16 +70,56 @@ pub fn transcribe(app: AppHandle, wav: Vec<u8>, generation: u64) {
             return;
         }
         match result {
-            Ok(text) => {
+            Ok((text, api_key)) => {
                 // output::apply skryje pilulku jako svůj první krok (ať paste
                 // nepřichází, dokud je okno viditelné), pak teprve event.
                 // Jediný owner skrývání je output::apply — žádná duplicitní
                 // pojistka tady (dvojí fade rozbíjel generační počítadlo).
-                let chars = text.chars().count();
+                // AI post-process (Task 5): když zapnuto a akce není passthrough,
+                // přepis jde přes llm::post_process se stejným klíčem jako STT
+                // (žádný druhý Keychain read). Chyba → warn + ai-failed + raw fallback.
+                let cfg = crate::settings::load();
+                let (final_text, ai_action_taken): (String, Option<String>) =
+                    if cfg.ai_enabled
+                        && cfg.ai_default_action != "passthrough"
+                        && !text.is_empty()
+                    {
+                        let _ = app.emit("ai-processing", json!({}));
+                        match crate::llm::post_process(
+                            &text,
+                            &cfg.ai_default_action,
+                            &cfg.ai_model,
+                            &api_key,
+                        )
+                        .await
+                        {
+                            Ok(out) => (out, Some(cfg.ai_default_action.clone())),
+                            Err(e) => {
+                                log::warn("ai", format!("fallback raw err=\"{e}\""));
+                                let _ = app.emit("ai-failed", json!({"message": e}));
+                                (text.clone(), None)
+                            }
+                        }
+                    } else {
+                        (text.clone(), None)
+                    };
+                let chars = final_text.chars().count();
                 log::info("stt", format!("transcribe done ok=true chars={chars} generation={generation}"));
                 // Historie: synchronně před output::apply (rychlé, Mutex + malý JSON).
-                crate::history::record(&app, &text, &crate::settings::load().model);
-                crate::output::apply(&app, text.clone(), generation);
+                // raw_text jen když AI proběhlo a výsledek se liší od raw —
+                // jinak None (passthrough/fallback/shodný text → bez badge).
+                let raw_opt: Option<&str> = match &ai_action_taken {
+                    Some(_) if text != final_text => Some(text.as_str()),
+                    _ => None,
+                };
+                crate::history::record(
+                    &app,
+                    &final_text,
+                    raw_opt,
+                    &cfg.model,
+                    ai_action_taken.as_deref(),
+                );
+                crate::output::apply(&app, final_text.clone(), generation);
                 let _ = app.emit(
                     "transcription-complete",
                     json!({ "chars": chars }),
@@ -93,8 +133,10 @@ pub fn transcribe(app: AppHandle, wav: Vec<u8>, generation: u64) {
     });
 }
 
-/// Celý HTTP tok; Ok(text) nebo Err(hláška pro pilulku/stderr).
-async fn run(app: &AppHandle, wav: Vec<u8>) -> Result<String, String> {
+/// Celý HTTP tok; Ok((text, api_key)) nebo Err(hláška pro pilulku/stderr).
+/// `api_key` se vrací volajícímu, aby ho AI krok (llm::post_process) reuse-nul
+/// bez druhého Keychain readu (Task 5).
+async fn run(app: &AppHandle, wav: Vec<u8>) -> Result<(String, String), String> {
     // 1. API key z macOS Keychain.
     let api_key = match settings::get_api_key() {
         Ok(Some(key)) => key,
@@ -153,7 +195,7 @@ async fn run(app: &AppHandle, wav: Vec<u8>) -> Result<String, String> {
     if text.is_empty() {
         return Err("Empty transcription".into());
     }
-    Ok(text)
+    Ok((text, api_key))
 }
 
 /// Zkrátí tělo odpovědi pro hlášku (max 200 znaků, jednorázový řez na char hranici).

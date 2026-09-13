@@ -575,3 +575,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   text-align: center;
   padding: 28px 12px;
 }
+
+/* ---------- AI pane ---------- */
+.dimmed { opacity: 0.45; pointer-events: none; }

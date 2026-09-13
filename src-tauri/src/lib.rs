@@ -3,6 +3,7 @@
 mod audio;
 mod history;
 mod hotkey;
+mod llm;
 mod log;
 mod output;
 mod permissions;
@@ -624,7 +625,8 @@ pub fn run() {
             history::list_history,
             history::copy_history_entry,
             history::delete_history_entry,
-            history::clear_history
+            history::clear_history,
+            llm::ai_preview
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

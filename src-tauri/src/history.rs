@@ -35,6 +35,10 @@ pub struct Entry {
     pub created_at: i64,
     pub chars: usize,
     pub model: String,
+    #[serde(default)]
+    pub ai_action: Option<String>,
+    #[serde(default)]
+    pub raw_text: Option<String>,
 }
 
 /// Managed state: `app.manage(Mutex::new(History::default()))`.
@@ -104,7 +108,19 @@ fn now_secs() -> i64 {
 /// Zaznamená úspěšnou transkripci. Voláno synchronně z stt.rs před
 /// output::apply. Chyby jen do stderr — nikdy nepanikuje, výsledek
 /// transkripce tím není ohrožen.
-pub fn record(app: &AppHandle, text: &str, model: &str) {
+///
+/// `text` je finální text (po případném AI post-processu).
+/// `raw_text` je Some(původní STT přepis) jen když proběhlo AI
+/// a výsledek se liší od raw; jinak None (žádný badge, žádný duplikát).
+/// `ai_action` je Some("cleanup"|"summarize"|"translate_en") jen při
+/// úspěšném AI — jinak None (fallback/passthrough → bez badge).
+pub fn record(
+    app: &AppHandle,
+    text: &str,
+    raw_text: Option<&str>,
+    model: &str,
+    ai_action: Option<&str>,
+) {
     let ms = now_ms();
     let count = ID_COUNTER.fetch_add(1, Ordering::Relaxed);
     let mut id = format!("{ms}-{count}");
@@ -134,6 +150,8 @@ pub fn record(app: &AppHandle, text: &str, model: &str) {
             created_at: now,
             chars: text.chars().count(),
             model: model.to_string(),
+            ai_action: ai_action.map(|s| s.to_string()),
+            raw_text: raw_text.map(|s| s.to_string()),
         },
     );
     history.entries.truncate(MAX_ENTRIES);
@@ -219,4 +237,32 @@ pub fn clear_history(app: AppHandle) -> Result<(), String> {
     };
     history.entries.clear();
     save_to_disk(&history.entries)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Entry;
+
+    /// Staré history.json (v0.1.1, bez ai_action/raw_text) se musí
+    /// načíst bez chyby, chybějící pole → None.
+    #[test]
+    fn old_entries_default_to_none() {
+        let json = r#"[{"id":"1","text":"ahoj","created_at":123,"chars":4,"model":"whisper-large-v3-turbo"}]"#;
+        let entries: Vec<Entry> = serde_json::from_str(json).expect("old json parses");
+        assert_eq!(entries.len(), 1);
+        assert!(entries[0].ai_action.is_none());
+        assert!(entries[0].raw_text.is_none());
+    }
+
+    /// Nové záznamy s AI badgem projdou roundtripem.
+    #[test]
+    fn new_entries_roundtrip() {
+        let json = r#"[{"id":"2","text":"Cleaned up.","created_at":456,"chars":11,"model":"whisper-large-v3-turbo","ai_action":"cleanup","raw_text":"ehm cleaned up"}]"#;
+        let entries: Vec<Entry> = serde_json::from_str(json).expect("new json parses");
+        assert_eq!(entries[0].ai_action.as_deref(), Some("cleanup"));
+        assert_eq!(entries[0].raw_text.as_deref(), Some("ehm cleaned up"));
+        let back = serde_json::to_string(&entries).expect("serialize");
+        let again: Vec<Entry> = serde_json::from_str(&back).expect("re-parse");
+        assert_eq!(again[0].ai_action.as_deref(), Some("cleanup"));
+    }
 }

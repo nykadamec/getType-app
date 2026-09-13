@@ -55,8 +55,13 @@ initTheme();
 
 const body = document.body;
 const timerEl = document.getElementById("timer");
+const aiLabelEl = document.getElementById("ai-label");
 let tick = null;
 let startedAt = 0;
+// Fallback timer clearing the ai-failed label when transcription-complete
+// is delayed; the normal dismiss path is transcription-complete →
+// endTranscribing (Rust always pastes raw after ai-failed).
+let aiFailedTimer = null;
 
 // Běžící dissolve animace + generace (restart uprostřed animace zruší
 // předchozí a úklid provede jen nejnovější).
@@ -182,7 +187,61 @@ function fadeOutNow() {
 function endTranscribing() {
   stopTimer();
   document.body.classList.remove("transcribing");
+  document.body.classList.remove("enhancing");
+  document.body.classList.remove("ai-failed");
+  if (aiFailedTimer) {
+    clearTimeout(aiFailedTimer);
+    aiFailedTimer = null;
+  }
+  if (aiLabelEl) {
+    aiLabelEl.textContent = "";
+    aiLabelEl.removeAttribute("title");
+  }
   fadeOutNow();
+}
+
+// AI post-processing (Task 9): stejný spinner jako transcribing (reuse
+// .transcribing stylu), jiný label "Enhancing…". Vlna se schová, ať je
+// na label místo. Žádné nové okno, žádný focus steal — jen třídy na body.
+function startEnhancing() {
+  stopTimer();
+  document.body.classList.add("transcribing");
+  document.body.classList.add("enhancing");
+  document.body.classList.remove("ai-failed");
+  if (aiFailedTimer) {
+    clearTimeout(aiFailedTimer);
+    aiFailedTimer = null;
+  }
+  if (aiLabelEl) {
+    aiLabelEl.textContent = "Enhancing…";
+    aiLabelEl.removeAttribute("title");
+  }
+  fadeIn();
+}
+
+// AI selhalo (Task 9): krátký toast se zprávou z eventu (fallback
+// "AI failed — raw text pasted"), pak normální paste flow (raw) —
+// dismiss dělá následující transcription-complete → endTranscribing.
+function showAiFailed(message) {
+  if (aiFailedTimer) {
+    clearTimeout(aiFailedTimer);
+    aiFailedTimer = null;
+  }
+  document.body.classList.remove("enhancing");
+  document.body.classList.add("ai-failed");
+  const text =
+    typeof message === "string" && message.trim()
+      ? message.trim()
+      : "AI failed — raw text pasted";
+  if (aiLabelEl) {
+    aiLabelEl.textContent = text;
+    aiLabelEl.title = text;
+  }
+  fadeIn();
+  aiFailedTimer = setTimeout(() => {
+    document.body.classList.remove("ai-failed");
+    aiFailedTimer = null;
+  }, 2500);
 }
 
 const Tauri = window.__TAURI__;
@@ -196,6 +255,10 @@ if (Tauri && Tauri.event) {
   Tauri.event.listen("transcribing-started", () => {
     fadeIn();
     startTranscribing();
+  });
+  Tauri.event.listen("ai-processing", startEnhancing);
+  Tauri.event.listen("ai-failed", (event) => {
+    showAiFailed(event && event.payload && event.payload.message);
   });
   Tauri.event.listen("pill-fade-out", fadeOutNow);
   Tauri.event.listen("transcription-complete", endTranscribing);

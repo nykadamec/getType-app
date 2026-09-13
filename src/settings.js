@@ -23,6 +23,9 @@ const DEFAULT_CONFIG = {
   model: "whisper-large-v3-turbo",
   language: "cs",
   theme: "system",
+  ai_enabled: false,
+  ai_default_action: "cleanup",
+  ai_model: "llama-3.1-8b-instant",
 };
 
 const SECTIONS = {
@@ -31,6 +34,7 @@ const SECTIONS = {
   shortcut: { title: "Shortcut", sub: "Global hotkey that starts dictation." },
   output: { title: "Output", sub: "How transcripts reach your apps." },
   model: { title: "Model", sub: "Which Groq speech model and language to use." },
+  ai: { title: "AI", sub: "Post-processing after dictation — same Groq key." },
   history: { title: "History", sub: "Your recent dictations — click any entry to copy it back." },
 };
 
@@ -76,6 +80,7 @@ const els = {
   copyClipboard: $("toggle-copy-clipboard"),
   model: $("model"),
   language: $("language"),
+  aiModel: $("ai-model"),
   launch: $("toggle-launch"),
   doneBtn: $("done-btn"),
   micDot: $("mic-dot"),
@@ -87,6 +92,9 @@ const els = {
   previewShortcut: $("preview-shortcut"),
   previewOutput: $("preview-output"),
   previewModel: $("preview-model"),
+  previewAi: $("preview-ai"),
+  aiEnabled: $("toggle-ai-enabled"),
+  aiSegmented: $("ai-action-segmented"),
   historyList: $("history-list"),
   historyEmpty: $("history-empty"),
   historyCount: $("history-count"),
@@ -433,7 +441,26 @@ function onOff(v) {
 function renderPreviews() {
   els.previewShortcut.textContent = `${hotkeyToDisplay(config.hotkey)} · ${modeLabel()}`;
   els.previewOutput.textContent = `Auto-paste ${onOff(config.auto_paste)} · Clipboard ${onOff(config.copy_clipboard)}`;
-  els.previewModel.textContent = `${config.model} · ${LANG_LABELS[config.language] ?? LANG_LABELS["cs"]}`;
+  els.previewModel.textContent = `Speech: ${config.model} · AI: ${config.ai_model}`;
+  els.previewAi.textContent = config.ai_enabled ? `AI ON · ${aiActionLabel(config.ai_default_action)}` : "AI OFF";
+}
+
+function aiActionLabel(action) {
+  switch (action) {
+    case "passthrough": return "Direct";
+    case "summarize": return "Summarize";
+    case "translate_en": return "Translate";
+    default: return "Cleanup";
+  }
+}
+
+function renderAi() {
+  renderSwitch(els.aiEnabled, !!config.ai_enabled);
+  els.aiSegmented.querySelectorAll("button").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.aiAction === config.ai_default_action);
+  });
+  // Tip stays fully visible in both states; only the action buttons dim.
+  els.aiSegmented.classList.toggle("dimmed", !config.ai_enabled);
 }
 
 /* ---------- render helpers ---------- */
@@ -721,6 +748,8 @@ async function loadHistory() {
   renderSwitch(els.launch, launchAtLogin);
   els.model.value = config.model;
   els.language.value = config.language || "";
+  els.aiModel.value = config.ai_model;
+  renderAi();
   renderPreviews();
   showSection("apikey");
 
@@ -798,6 +827,23 @@ async function loadHistory() {
   bindSwitch(els.autoPaste, "auto_paste");
   bindSwitch(els.copyClipboard, "copy_clipboard");
 
+  bindSwitch(els.aiEnabled, "ai_enabled");
+  els.aiEnabled.addEventListener("click", () => {
+    renderAi();
+    renderPreviews();
+  });
+
+  els.aiSegmented.querySelectorAll("button").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const action = btn.dataset.aiAction;
+      if (!config.ai_enabled) return;
+      if (!action || config.ai_default_action === action) return;
+      config.ai_default_action = action;
+      renderAi();
+      scheduleSave();
+    });
+  });
+
   els.launch.addEventListener("click", async () => {
     const next = els.launch.getAttribute("aria-checked") !== "true";
     renderSwitch(els.launch, next);
@@ -860,6 +906,11 @@ async function loadHistory() {
 
   els.language.addEventListener("change", () => {
     config.language = els.language.value;
+    scheduleSave();
+  });
+
+  els.aiModel.addEventListener("change", () => {
+    config.ai_model = els.aiModel.value;
     scheduleSave();
   });
 

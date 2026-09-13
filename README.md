@@ -1,26 +1,28 @@
-# getType
+# getType ⌨️🎙️
 
-A lightweight dictation app for macOS. Press a global hotkey, speak — getType transcribes your voice to text and pastes it where your cursor is.
+Press a hotkey, speak, done — **getType** transcribes your voice and pastes the text where your cursor is. A lightweight dictation app for macOS, living quietly in your menu bar.
 
 ## How it works
 
-1. Hold (or tap) the global hotkey → a small pill appears and records the microphone.
-2. Release the key → the recording is sent to Groq speech-to-text.
-3. The text is automatically pasted into the active app (⌘V simulation) and copied to the clipboard.
+1. **Hold** (or tap) the global hotkey → a small pill appears and records your mic.
+2. **Release** → the recording goes to Groq speech-to-text (`whisper-large-v3-turbo`).
+3. The text is **auto-pasted** at your cursor (⌘V simulation) and copied to clipboard. Your previous clipboard content is restored afterwards.
 
-That's it — no Dock icon, just a menu bar icon.
+No Dock icon. No windows in your way. Just talk.
 
 ## Features
 
-- **Global hotkey** — push-to-talk (hold → speak → release) and toggle (tap → tap) modes.
-- **Cancel with ESC** — cancels recording or transcription, nothing is saved or pasted.
-- **Auto-paste + clipboard** — text is pasted at the cursor and copied; the previous clipboard content is restored afterwards.
-- **Transcription history** — in Settings, with click-to-copy, delete, and clear-all.
-- **Mini pill** — idle → recording → transcribing states, always on top, never steals focus.
-- **Settings** — Groq API key (stored in Keychain, never in files), hotkey, mode, model and language, auto-paste/copy toggles, launch at login.
-- **AI post-processing** — optional cleanup (punctuation, filler words), 2–3 sentence summary, or translation to English via Groq LLM (default `llama-3.1-8b-instant`, same API key). Falls back to raw transcript on any error, never blocks paste.
-- **First-run onboarding** — API key setup, permission check, and hotkey test in one window.
-- **Permissions in one place** — microphone and Accessibility status (Accessibility is required for ⌘V paste).
+| Area | What you get |
+|---|---|
+| 🎙️ Push-to-talk & toggle | Hold-to-speak or tap-to-start / tap-to-stop hotkey modes |
+| 💊 Mini pill | Idle → recording → transcribing states, always on top, never steals focus |
+| ⎋ ESC to cancel | Cancels recording or transcription — nothing saved, nothing pasted |
+| 📋 Auto-paste + clipboard | Pastes at cursor, copies to clipboard, restores previous content |
+| 🤖 AI post-processing | Optional **cleanup** (punctuation, filler words), **summary** (2–3 sentences), or **translation to English** via Groq LLM (`llama-3.1-8b-instant`, same API key). Any failure falls back to raw transcript — paste is never blocked |
+| 🕘 History | Past transcriptions in Settings with click-to-copy, delete, clear-all |
+| 🧭 Onboarding | First-run window: API key, permissions, and hotkey test in one place |
+| ⚙️ Settings | Groq API key (Keychain, never in files), hotkey, mode, STT + AI model, language, auto-paste/copy toggles, launch at login |
+| 🔐 Permissions | Microphone + Accessibility status in one place (Accessibility is required for ⌘V paste) |
 
 ## Screenshots
 
@@ -28,26 +30,27 @@ That's it — no Dock icon, just a menu bar icon.
 
 ## Requirements
 
-- macOS 26+ (Tahoe and newer)
-- Free Groq API key ([console.groq.com](https://console.groq.com)) — paste it in Settings, one-click verification included.
-- Permissions: Microphone + Accessibility (System Settings → Privacy & Security).
+- **macOS 26+** (Tahoe and newer)
+- **Free Groq API key** — get one at [console.groq.com](https://console.groq.com), paste it in Settings (one-click verification included)
+- Permissions: **Microphone** + **Accessibility** (System Settings → Privacy & Security)
 
 ## Development
 
 ```bash
 npm install -g @tauri-apps/cli   # or: cargo install tauri-cli
 cargo tauri dev                   # develop
-cargo tauri build                 # build
+cargo tauri build                 # build (.app / .dmg)
 ```
 
-Manual smoke test: hotkey → record → release → text appears in TextEdit/Safari.
+Quick smoke test: hotkey → record → release → text appears in TextEdit or Safari.
 
 ## Project structure
 
-- `src/` — frontend (vanilla HTML/CSS/JS): `pill.*` (the pill), `settings.*` (settings window)
-- `src-tauri/src/` — Rust backend: `audio.rs` (capture), `hotkey.rs` (shortcuts), `stt.rs` (Groq), `output.rs` (clipboard + paste), `history.rs`, `permissions.rs`, `pill.rs`, `settings.rs`, `verify.rs`
+- `src/` — frontend (vanilla HTML/CSS/JS): `pill.*`, `popover.*`, `settings.*`, `onboarding.*`
+- `src-tauri/src/` — Rust backend: `audio.rs` (capture), `hotkey.rs`, `stt.rs` (Groq Whisper), `llm.rs` (AI actions), `output.rs` (clipboard + paste), `history.rs`, `permissions.rs`, `pill.rs`, `settings.rs`, `verify.rs`, `sound.rs`
 - `plan-*.md` — feature plans (in Czech)
+- `designs/` — UI explorations
 
 ## Status
 
-v0.1.1: record → transcribe → paste, history, ESC cancel, Dock icon while Settings is open, AI post-processing (cleanup / summarize / translate), first-run onboarding.
+**v0.1.1** — MVP done: record → transcribe → paste, history, ESC cancel, AI post-processing, onboarding, Settings with Dock icon while open.

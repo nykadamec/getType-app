@@ -18,6 +18,8 @@ That's it — no Dock icon, just a menu bar icon.
 - **Transcription history** — in Settings, with click-to-copy, delete, and clear-all.
 - **Mini pill** — idle → recording → transcribing states, always on top, never steals focus.
 - **Settings** — Groq API key (stored in Keychain, never in files), hotkey, mode, model and language, auto-paste/copy toggles, launch at login.
+- **AI post-processing** — optional cleanup (punctuation, filler words), 2–3 sentence summary, or translation to English via Groq LLM (default `llama-3.1-8b-instant`, same API key). Falls back to raw transcript on any error, never blocks paste.
+- **First-run onboarding** — API key setup, permission check, and hotkey test in one window.
 - **Permissions in one place** — microphone and Accessibility status (Accessibility is required for ⌘V paste).
 
 ## Screenshots
@@ -48,4 +50,4 @@ Manual smoke test: hotkey → record → release → text appears in TextEdit/Sa
 
 ## Status
 
-MVP done: record → transcribe → paste, history, ESC cancel, Dock icon while Settings is open.
+v0.1.1: record → transcribe → paste, history, ESC cancel, Dock icon while Settings is open, AI post-processing (cleanup / summarize / translate), first-run onboarding.
